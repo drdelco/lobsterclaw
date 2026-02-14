@@ -1,14 +1,18 @@
-import { 
-  Monitor, 
-  Clock, 
-  MessageSquare, 
-  DollarSign, 
-  Bot, 
-  FileText, 
-  Terminal,
-  Settings,
-  LogOut
-} from 'lucide-react';
+import { NavLink, Stack, Text, Group, Box, ActionIcon, Tooltip } from '@mantine/core';
+import {
+  IconDeviceDesktop,
+  IconClock,
+  IconMessageCircle,
+  IconCurrencyDollar,
+  IconRobot,
+  IconFileText,
+  IconTerminal2,
+  IconSettings,
+  IconLogout,
+  IconMoon,
+  IconSun,
+} from '@tabler/icons-react';
+import { useMantineColorScheme } from '@mantine/core';
 
 interface SidebarProps {
   currentPage: string;
@@ -17,68 +21,99 @@ interface SidebarProps {
 }
 
 const navItems = [
-  { id: 'instances', label: 'Instancias', icon: Monitor },
-  { id: 'cron', label: 'Cron Jobs', icon: Clock },
-  { id: 'chat', label: 'Chat', icon: MessageSquare },
-  { id: 'costs', label: 'Costes', icon: DollarSign },
-  { id: 'llms', label: 'LLMs', icon: Bot },
-  { id: 'config', label: 'Configuración', icon: FileText },
-  { id: 'terminal', label: 'Terminal', icon: Terminal },
+  { id: 'instances', label: 'Instancias', icon: IconDeviceDesktop },
+  { id: 'cron', label: 'Cron Jobs', icon: IconClock },
+  { id: 'chat', label: 'Chat', icon: IconMessageCircle },
+  { id: 'costs', label: 'Costes', icon: IconCurrencyDollar },
+  { id: 'llms', label: 'LLMs', icon: IconRobot },
+  { id: 'config', label: 'Configuración', icon: IconFileText },
+  { id: 'terminal', label: 'Terminal', icon: IconTerminal2 },
 ];
 
 export function Sidebar({ currentPage, onNavigate, onLogout }: SidebarProps) {
+  const { colorScheme, toggleColorScheme } = useMantineColorScheme();
+
   return (
-    <aside className="w-64 bg-gray-900 text-white flex flex-col h-screen">
-      {/* Logo */}
-      <div className="p-6 border-b border-gray-800">
-        <div className="flex items-center gap-3">
-          <span className="text-3xl">🦞</span>
-          <div>
-            <h1 className="font-bold text-lg">OpenClaw</h1>
-            <p className="text-xs text-gray-400">Command Center</p>
-          </div>
-        </div>
-      </div>
-      
-      {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-1">
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = currentPage === item.id;
-          return (
-            <button
+    <Box
+      component="aside"
+      w={260}
+      h="100vh"
+      bg="dark.8"
+      style={{ borderRight: '1px solid var(--mantine-color-dark-6)' }}
+    >
+      <Stack h="100%" gap={0}>
+        {/* Logo */}
+        <Box p="lg" style={{ borderBottom: '1px solid var(--mantine-color-dark-6)' }}>
+          <Group gap="sm">
+            <Text size="2rem">🦞</Text>
+            <Box>
+              <Text fw={700} size="lg" c="white">OpenClaw</Text>
+              <Text size="xs" c="dimmed">Command Center</Text>
+            </Box>
+          </Group>
+        </Box>
+
+        {/* Navigation */}
+        <Stack gap={4} p="md" style={{ flex: 1 }}>
+          {navItems.map((item) => (
+            <NavLink
               key={item.id}
+              label={item.label}
+              leftSection={<item.icon size={20} stroke={1.5} />}
+              active={currentPage === item.id}
               onClick={() => onNavigate(item.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                isActive
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-              }`}
-            >
-              <Icon size={20} />
-              <span className="font-medium">{item.label}</span>
-            </button>
-          );
-        })}
-      </nav>
-      
-      {/* Bottom actions */}
-      <div className="p-4 border-t border-gray-800 space-y-1">
-        <button
-          onClick={() => onNavigate('settings')}
-          className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white transition-colors"
-        >
-          <Settings size={20} />
-          <span className="font-medium">Ajustes</span>
-        </button>
-        <button
-          onClick={onLogout}
-          className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-400 hover:bg-gray-800 hover:text-red-400 transition-colors"
-        >
-          <LogOut size={20} />
-          <span className="font-medium">Cerrar sesión</span>
-        </button>
-      </div>
-    </aside>
+              variant="filled"
+              styles={{
+                root: {
+                  borderRadius: 'var(--mantine-radius-md)',
+                },
+              }}
+            />
+          ))}
+        </Stack>
+
+        {/* Bottom actions */}
+        <Box p="md" style={{ borderTop: '1px solid var(--mantine-color-dark-6)' }}>
+          <Stack gap={4}>
+            <Group justify="space-between" mb="xs">
+              <Text size="xs" c="dimmed">Tema</Text>
+              <Tooltip label={colorScheme === 'dark' ? 'Modo claro' : 'Modo oscuro'}>
+                <ActionIcon
+                  variant="subtle"
+                  onClick={() => toggleColorScheme()}
+                  size="sm"
+                >
+                  {colorScheme === 'dark' ? <IconSun size={16} /> : <IconMoon size={16} />}
+                </ActionIcon>
+              </Tooltip>
+            </Group>
+            <NavLink
+              label="Ajustes"
+              leftSection={<IconSettings size={20} stroke={1.5} />}
+              active={currentPage === 'settings'}
+              onClick={() => onNavigate('settings')}
+              variant="subtle"
+              styles={{
+                root: {
+                  borderRadius: 'var(--mantine-radius-md)',
+                },
+              }}
+            />
+            <NavLink
+              label="Cerrar sesión"
+              leftSection={<IconLogout size={20} stroke={1.5} />}
+              onClick={onLogout}
+              variant="subtle"
+              c="red"
+              styles={{
+                root: {
+                  borderRadius: 'var(--mantine-radius-md)',
+                },
+              }}
+            />
+          </Stack>
+        </Box>
+      </Stack>
+    </Box>
   );
 }

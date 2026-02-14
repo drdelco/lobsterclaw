@@ -10,14 +10,19 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@tailwindcss/vite": "^4.1.18",
+    "@mantine/charts": "^8.3.14",
+    "@mantine/code-highlight": "^8.3.14",
+    "@mantine/core": "^8.3.14",
+    "@mantine/form": "^8.3.14",
+    "@mantine/hooks": "^8.3.14",
+    "@mantine/modals": "^8.3.14",
+    "@mantine/notifications": "^8.3.14",
+    "@tabler/icons-react": "^3.36.1",
     "@tanstack/react-query": "^5.90.21",
     "firebase": "^12.9.0",
-    "lucide-react": "^0.564.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "recharts": "^3.7.0",
-    "tailwindcss": "^4.1.18",
     "zustand": "^5.0.11"
   },
   "devDependencies": {

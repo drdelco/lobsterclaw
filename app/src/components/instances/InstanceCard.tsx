@@ -1,6 +1,5 @@
-import { Activity, Clock, Cpu, RefreshCw } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
+import { Card, Group, Text, Badge, Stack, Button, Box, Tooltip } from '@mantine/core';
+import { IconRefresh, IconActivity, IconCpu, IconClock } from '@tabler/icons-react';
 import type { Instance } from '@/types';
 
 interface InstanceCardProps {
@@ -11,18 +10,24 @@ interface InstanceCardProps {
 }
 
 export function InstanceCard({ instance, isSelected, onSelect, onRestart }: InstanceCardProps) {
-  const statusColors = {
-    online: 'bg-green-500',
-    offline: 'bg-gray-400',
-    error: 'bg-red-500',
+  const statusColors: Record<string, string> = {
+    online: 'green',
+    offline: 'gray',
+    error: 'red',
   };
-  
-  const locationLabels = {
+
+  const statusLabels: Record<string, string> = {
+    online: 'Online',
+    offline: 'Offline',
+    error: 'Error',
+  };
+
+  const locationLabels: Record<string, string> = {
     gcloud: 'Google Cloud',
     local: 'Local',
     vps: 'VPS',
   };
-  
+
   const timeSince = (date: Date) => {
     const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
     if (seconds < 60) return `hace ${seconds}s`;
@@ -30,57 +35,70 @@ export function InstanceCard({ instance, isSelected, onSelect, onRestart }: Inst
     if (seconds < 86400) return `hace ${Math.floor(seconds / 3600)}h`;
     return `hace ${Math.floor(seconds / 86400)}d`;
   };
-  
+
   return (
-    <Card 
-      className={`cursor-pointer transition-all hover:shadow-md ${
-        isSelected ? 'ring-2 ring-blue-500' : ''
-      }`}
+    <Card
+      shadow="sm"
+      padding="lg"
+      radius="md"
+      withBorder
       onClick={onSelect}
+      style={{
+        cursor: 'pointer',
+        borderColor: isSelected ? 'var(--mantine-color-blue-6)' : undefined,
+        borderWidth: isSelected ? 2 : 1,
+      }}
     >
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">{instance.emoji || '🤖'}</span>
-            <div>
-              <h3 className="font-semibold text-gray-900 dark:text-white">
-                {instance.name}
-              </h3>
-              <p className="text-sm text-gray-500">{locationLabels[instance.location]}</p>
-            </div>
-          </div>
-          <div className={`w-3 h-3 rounded-full ${statusColors[instance.status]}`} />
-        </div>
-        
-        <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
-          <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-            <Activity size={14} />
-            <span>{instance.version}</span>
-          </div>
-          <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-            <Cpu size={14} />
-            <span className="truncate">{instance.model.split('/').pop()}</span>
-          </div>
-          <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400 col-span-2">
-            <Clock size={14} />
-            <span>Heartbeat: {timeSince(instance.lastHeartbeat)}</span>
-          </div>
-        </div>
-        
-        <div className="mt-4 flex justify-end">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              onRestart();
-            }}
-          >
-            <RefreshCw size={14} className="mr-1" />
-            Restart
-          </Button>
-        </div>
-      </CardContent>
+      <Group justify="space-between" mb="md">
+        <Group gap="sm">
+          <Text size="1.75rem">{instance.emoji || '🤖'}</Text>
+          <Box>
+            <Text fw={600} size="lg">{instance.name}</Text>
+            <Text size="sm" c="dimmed">{locationLabels[instance.location]}</Text>
+          </Box>
+        </Group>
+        <Badge color={statusColors[instance.status]} variant="dot" size="lg">
+          {statusLabels[instance.status]}
+        </Badge>
+      </Group>
+
+      <Stack gap="xs">
+        <Group gap="xs">
+          <IconActivity size={16} style={{ opacity: 0.6 }} />
+          <Text size="sm" c="dimmed">Versión:</Text>
+          <Text size="sm">{instance.version}</Text>
+        </Group>
+
+        <Group gap="xs">
+          <IconCpu size={16} style={{ opacity: 0.6 }} />
+          <Text size="sm" c="dimmed">Modelo:</Text>
+          <Tooltip label={instance.model}>
+            <Text size="sm" lineClamp={1} style={{ maxWidth: 150 }}>
+              {instance.model.split('/').pop()}
+            </Text>
+          </Tooltip>
+        </Group>
+
+        <Group gap="xs">
+          <IconClock size={16} style={{ opacity: 0.6 }} />
+          <Text size="sm" c="dimmed">Heartbeat:</Text>
+          <Text size="sm">{timeSince(instance.lastHeartbeat)}</Text>
+        </Group>
+      </Stack>
+
+      <Group justify="flex-end" mt="md">
+        <Button
+          variant="subtle"
+          size="xs"
+          leftSection={<IconRefresh size={14} />}
+          onClick={(e) => {
+            e.stopPropagation();
+            onRestart();
+          }}
+        >
+          Restart
+        </Button>
+      </Group>
     </Card>
   );
 }
