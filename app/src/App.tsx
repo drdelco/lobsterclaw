@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { Box, Group, Title, Text, Paper, Stack } from '@mantine/core';
-import { IconCurrencyDollar, IconRobot, IconFileText, IconTerminal2, IconSettings } from '@tabler/icons-react';
+import { IconRobot, IconFileText, IconTerminal2, IconSettings } from '@tabler/icons-react';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { InstancesPage } from '@/pages/InstancesPage';
 import { CronJobsPage } from '@/pages/CronJobsPage';
 import { ChatPage } from '@/pages/ChatPage';
+import { CostsPage } from '@/pages/CostsPage';
 
 // Placeholder page component
 interface PlaceholderPageProps {
@@ -43,7 +44,7 @@ export default function App() {
       case 'chat':
         return <ChatPage />;
       case 'costs':
-        return <PlaceholderPage title="Control de Costes" icon={IconCurrencyDollar} />;
+        return <CostsPage />;
       case 'llms':
         return <PlaceholderPage title="Gestión de LLMs" icon={IconRobot} />;
       case 'config':
