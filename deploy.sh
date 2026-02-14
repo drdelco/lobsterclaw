@@ -42,4 +42,4 @@ esac
 
 echo ""
 echo "✅ Deploy complete!"
-echo "🌐 https://lobsterclaw.web.app"
+echo "🌐 https://lobsterclaw-c9af9.web.app"
