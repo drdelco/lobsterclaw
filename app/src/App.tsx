@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { Box, Group, Title, Text, Paper, Stack } from '@mantine/core';
-import { IconTerminal2, IconSettings } from '@tabler/icons-react';
+import { Box, Group } from '@mantine/core';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { InstancesPage } from '@/pages/InstancesPage';
 import { CronJobsPage } from '@/pages/CronJobsPage';
@@ -8,32 +7,14 @@ import { ChatPage } from '@/pages/ChatPage';
 import { CostsPage } from '@/pages/CostsPage';
 import { LLMsPage } from '@/pages/LLMsPage';
 import { ConfigPage } from '@/pages/ConfigPage';
-
-// Placeholder page component
-interface PlaceholderPageProps {
-  title: string;
-  icon: React.ElementType;
-}
-
-function PlaceholderPage({ title, icon: Icon }: PlaceholderPageProps) {
-  return (
-    <Box p="xl">
-      <Title order={2} mb="md">{title}</Title>
-      <Paper p="xl" radius="md" withBorder>
-        <Stack align="center" gap="md" py="xl">
-          <Icon size={48} style={{ opacity: 0.5 }} />
-          <Text c="dimmed">Próximamente...</Text>
-        </Stack>
-      </Paper>
-    </Box>
-  );
-}
+import { TerminalPage } from '@/pages/TerminalPage';
+import { SettingsPage } from '@/pages/SettingsPage';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState('instances');
 
   const handleLogout = () => {
-    // TODO: Implement logout
+    // TODO: Implement logout with Firebase
     console.log('Logout');
   };
 
@@ -52,9 +33,9 @@ export default function App() {
       case 'config':
         return <ConfigPage />;
       case 'terminal':
-        return <PlaceholderPage title="Terminal SSH" icon={IconTerminal2} />;
+        return <TerminalPage />;
       case 'settings':
-        return <PlaceholderPage title="Ajustes" icon={IconSettings} />;
+        return <SettingsPage />;
       default:
         return <InstancesPage />;
     }

@@ -99,13 +99,18 @@ openclaw-dashboard/
 
 ## Roadmap
 
-- [x] Fase 1: Setup proyecto base
-- [ ] Fase 1: Auth con Google
-- [ ] Fase 1: Panel de instancias completo
-- [ ] Fase 2: Editor de MDs
-- [ ] Fase 2: Gestor cron jobs
-- [ ] Fase 3: Control de costes
-- [ ] Fase 4: SSH/SFTP web
+- [x] Setup proyecto base (Mantine 8 + Tabler Icons)
+- [x] Panel de instancias
+- [x] Gestor de Cron Jobs
+- [x] Chat unificado
+- [x] Control de costes (gráficos, por instancia)
+- [x] Gestión de LLMs (proveedores, API keys)
+- [x] Editor de configuración (SOUL.md, MEMORY.md, etc.)
+- [x] Terminal SSH + SFTP
+- [x] Página de ajustes
+- [ ] Auth con Firebase (Google)
+- [ ] Conectar a API real de OpenClaw Gateway
+- [ ] Deploy en Firebase Hosting
 
 ## Licencia
 
