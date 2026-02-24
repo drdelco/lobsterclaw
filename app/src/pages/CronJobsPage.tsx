@@ -1,234 +1,197 @@
 import { useState } from 'react';
-import { Box, Title, Text, Button, Table, Paper, Group, TextInput, Select, Badge, Stack } from '@mantine/core';
-import { useDisclosure } from '@mantine/hooks';
-import { modals } from '@mantine/modals';
+import { Box, Title, Text, Button, Table, Paper, Group, TextInput, Badge, Stack, Alert, Loader, Center } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconPlus, IconSearch, IconCalendarOff } from '@tabler/icons-react';
-import { CronJobRow } from '@/components/cron/CronJobRow';
-import { CronJobModal } from '@/components/cron/CronJobModal';
-import type { CronJob, Instance } from '@/types';
-
-// Mock data
-const mockInstances: Instance[] = [
-  {
-    id: 'alvi',
-    name: 'Alvi',
-    emoji: '🦉',
-    location: 'gcloud',
-    host: 'localhost',
-    port: 3033,
-    gatewayToken: '***',
-    status: 'online',
-    lastHeartbeat: new Date(),
-    version: '2026.2.3-1',
-    model: 'anthropic/claude-opus-4-5',
-    createdAt: new Date('2026-02-08'),
-  },
-];
-
-const mockCronJobs: CronJob[] = [
-  {
-    id: 'email-check',
-    instanceId: 'alvi',
-    name: 'Revisión de emails',
-    schedule: { kind: 'every', everyMs: 30 * 60 * 1000 },
-    payload: { kind: 'systemEvent', text: 'Revisa los emails pendientes de Diego y Juani' },
-    enabled: true,
-    lastRun: new Date(Date.now() - 15 * 60 * 1000),
-    lastStatus: 'success',
-    nextRun: new Date(Date.now() + 15 * 60 * 1000),
-  },
-  {
-    id: 'weekly-papers',
-    instanceId: 'alvi',
-    name: 'Papers semanales',
-    schedule: { kind: 'cron', expr: '0 9 * * 1' },
-    payload: { kind: 'agentTurn', message: 'Busca papers relevantes de cirugía de columna de la última semana' },
-    enabled: true,
-    lastRun: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
-    lastStatus: 'success',
-    nextRun: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000),
-  },
-  {
-    id: 'morning-briefing',
-    instanceId: 'alvi',
-    name: 'Briefing matutino',
-    schedule: { kind: 'cron', expr: '30 7 * * *' },
-    payload: { kind: 'systemEvent', text: 'Prepara el briefing matutino para Diego y Juani' },
-    enabled: false,
-    lastRun: new Date(Date.now() - 24 * 60 * 60 * 1000),
-    lastStatus: 'success',
-  },
-];
+import { IconPlus, IconSearch, IconCalendarOff, IconCheck, IconAlertTriangle, IconRefresh } from '@tabler/icons-react';
+import { useCronJobs } from '@/hooks/useFirestore';
 
 export function CronJobsPage() {
-  const [jobs, setJobs] = useState<CronJob[]>(mockCronJobs);
-  const [modalOpened, { open: openModal, close: closeModal }] = useDisclosure(false);
-  const [editingJob, setEditingJob] = useState<CronJob | undefined>();
+  const { jobs: firestoreJobs, loading, error } = useCronJobs('alvi');
   const [searchQuery, setSearchQuery] = useState('');
-  const [instanceFilter, setInstanceFilter] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
 
-  const instances = mockInstances; // TODO: Get from store
+  const isLiveData = firestoreJobs.length > 0 && !error;
 
-  const getInstanceName = (instanceId: string) => {
-    const instance = instances.find((i) => i.id === instanceId);
-    return instance ? `${instance.emoji || '🤖'} ${instance.name}` : instanceId;
-  };
+  // Use Firestore jobs directly
+  const jobs = firestoreJobs;
 
   const filteredJobs = jobs.filter((job) => {
-    const matchesSearch = !searchQuery || 
-      job.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      job.id.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesInstance = !instanceFilter || job.instanceId === instanceFilter;
-    return matchesSearch && matchesInstance;
+    if (!searchQuery) return true;
+    return job.name?.toLowerCase().includes(searchQuery.toLowerCase());
   });
 
-  const handleCreateJob = () => {
-    setEditingJob(undefined);
-    openModal();
-  };
+  const enabledCount = jobs.filter(j => j.enabled).length;
 
-  const handleEditJob = (job: CronJob) => {
-    setEditingJob(job);
-    openModal();
-  };
-
-  const handleSubmitJob = (jobData: Partial<CronJob>) => {
-    if (editingJob) {
-      // Update existing
-      setJobs(jobs.map((j) => (j.id === editingJob.id ? { ...j, ...jobData } : j)));
-      notifications.show({
-        title: 'Job actualizado',
-        message: `"${jobData.name}" ha sido actualizado`,
-        color: 'blue',
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      const response = await fetch('http://35.241.159.137:8787/sync/crons', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer lobsterclaw-sync-2026' },
       });
-    } else {
-      // Create new
-      const newJob: CronJob = {
-        id: `job-${Date.now()}`,
-        instanceId: jobData.instanceId!,
-        name: jobData.name!,
-        schedule: jobData.schedule!,
-        payload: jobData.payload!,
-        enabled: true,
-      };
-      setJobs([...jobs, newJob]);
+      if (response.ok) {
+        notifications.show({
+          title: 'Sincronizado',
+          message: 'Cron jobs actualizados',
+          color: 'green',
+        });
+        window.location.reload();
+      }
+    } catch (err) {
       notifications.show({
-        title: 'Job creado',
-        message: `"${jobData.name}" ha sido creado`,
-        color: 'green',
+        title: 'Error',
+        message: 'No se pudo sincronizar',
+        color: 'red',
       });
     }
+    setSyncing(false);
   };
 
-  const handleRunJob = (job: CronJob) => {
+  const handleAction = () => {
     notifications.show({
-      title: 'Ejecutando job',
-      message: `"${job.name}" se está ejecutando...`,
+      title: 'Próximamente',
+      message: 'Esta función estará disponible pronto',
       color: 'blue',
-      loading: true,
-    });
-    // TODO: Call cron run API
-  };
-
-  const handleToggleJob = (job: CronJob) => {
-    setJobs(jobs.map((j) => (j.id === job.id ? { ...j, enabled: !j.enabled } : j)));
-    notifications.show({
-      message: job.enabled ? `"${job.name}" desactivado` : `"${job.name}" activado`,
-      color: job.enabled ? 'yellow' : 'green',
     });
   };
 
-  const handleDeleteJob = (job: CronJob) => {
-    modals.openConfirmModal({
-      title: 'Eliminar cron job',
-      children: (
-        <Text size="sm">
-          ¿Estás seguro de que quieres eliminar "{job.name}"? Esta acción no se puede deshacer.
-        </Text>
-      ),
-      labels: { confirm: 'Eliminar', cancel: 'Cancelar' },
-      confirmProps: { color: 'red' },
-      onConfirm: () => {
-        setJobs(jobs.filter((j) => j.id !== job.id));
-        notifications.show({
-          title: 'Job eliminado',
-          message: `"${job.name}" ha sido eliminado`,
-          color: 'red',
-        });
-      },
-    });
+  const formatSchedule = (schedule: any) => {
+    if (!schedule) return 'Sin programar';
+    if (schedule.kind === 'cron') {
+      return `Cron: ${schedule.expr}${schedule.tz ? ` (${schedule.tz})` : ''}`;
+    }
+    if (schedule.kind === 'every') {
+      const mins = Math.round(schedule.everyMs / 60000);
+      if (mins >= 60) return `Cada ${Math.round(mins / 60)}h`;
+      return `Cada ${mins}min`;
+    }
+    if (schedule.kind === 'at') {
+      return `Una vez: ${new Date(schedule.at).toLocaleString('es-ES')}`;
+    }
+    return JSON.stringify(schedule);
   };
 
-  const activeCount = jobs.filter((j) => j.enabled).length;
+  if (loading) {
+    return (
+      <Center h={400}>
+        <Loader size="lg" />
+      </Center>
+    );
+  }
 
   return (
     <Box p="xl">
       <Group justify="space-between" mb="xl">
         <Box>
-          <Group gap="sm">
-            <Title order={2}>Cron Jobs</Title>
-            <Badge variant="light" size="lg">
-              {activeCount} activos
-            </Badge>
-          </Group>
+          <Title order={2}>Cron Jobs</Title>
           <Text c="dimmed" mt={4}>
-            Tareas programadas de tus instancias
+            Tareas programadas de OpenClaw
           </Text>
         </Box>
-        <Button leftSection={<IconPlus size={18} />} onClick={handleCreateJob}>
-          Nuevo Job
-        </Button>
+        <Group>
+          <Button 
+            variant="light" 
+            leftSection={<IconRefresh size={18} />}
+            onClick={handleSync}
+            loading={syncing}
+          >
+            Sincronizar
+          </Button>
+          <Button 
+            leftSection={<IconPlus size={18} />} 
+            onClick={() => notifications.show({ message: 'Usa Telegram para crear crons', color: 'blue' })}
+          >
+            Nuevo cron
+          </Button>
+        </Group>
       </Group>
 
-      {/* Filters */}
-      <Paper p="md" radius="md" withBorder mb="lg">
-        <Group>
-          <TextInput
-            placeholder="Buscar por nombre..."
-            leftSection={<IconSearch size={16} />}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            style={{ flex: 1 }}
-          />
-          <Select
-            placeholder="Todas las instancias"
-            clearable
-            data={instances.map((i) => ({ value: i.id, label: `${i.emoji || '🤖'} ${i.name}` }))}
-            value={instanceFilter}
-            onChange={setInstanceFilter}
-            w={200}
-          />
-        </Group>
-      </Paper>
+      {/* Data source indicator */}
+      {isLiveData ? (
+        <Alert color="green" mb="xl" icon={<IconCheck />}>
+          <Group justify="space-between">
+            <Text size="sm">
+              <strong>✅ DATOS REALES</strong> — {jobs.length} cron jobs ({enabledCount} activos)
+            </Text>
+            <Badge color="green" variant="filled">LIVE</Badge>
+          </Group>
+        </Alert>
+      ) : (
+        <Alert color="orange" mb="xl" icon={<IconAlertTriangle />}>
+          <Group justify="space-between">
+            <Text size="sm">
+              <strong>⚠️ SIN DATOS</strong> — No se pudieron cargar los cron jobs
+            </Text>
+            <Badge color="orange" variant="filled">OFFLINE</Badge>
+          </Group>
+        </Alert>
+      )}
 
-      {/* Table */}
+      {/* Search */}
+      <Group mb="lg">
+        <TextInput
+          placeholder="Buscar cron jobs..."
+          leftSection={<IconSearch size={16} />}
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.currentTarget.value)}
+          style={{ flex: 1, maxWidth: 300 }}
+        />
+      </Group>
+
+      {/* Jobs table */}
       {filteredJobs.length > 0 ? (
         <Paper radius="md" withBorder>
-          <Table highlightOnHover>
+          <Table striped highlightOnHover>
             <Table.Thead>
               <Table.Tr>
+                <Table.Th>Estado</Table.Th>
                 <Table.Th>Nombre</Table.Th>
-                <Table.Th>Instancia</Table.Th>
                 <Table.Th>Programación</Table.Th>
-                <Table.Th>Tarea</Table.Th>
-                <Table.Th>Última ejecución</Table.Th>
-                <Table.Th>Próxima</Table.Th>
-                <Table.Th>Activo</Table.Th>
+                <Table.Th>Próxima ejecución</Table.Th>
                 <Table.Th>Acciones</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
               {filteredJobs.map((job) => (
-                <CronJobRow
-                  key={job.id}
-                  job={job}
-                  instanceName={getInstanceName(job.instanceId)}
-                  onRun={() => handleRunJob(job)}
-                  onEdit={() => handleEditJob(job)}
-                  onDelete={() => handleDeleteJob(job)}
-                  onToggle={() => handleToggleJob(job)}
-                />
+                <Table.Tr key={job.id}>
+                  <Table.Td>
+                    <Badge color={job.enabled ? 'green' : 'gray'} variant="light">
+                      {job.enabled ? 'Activo' : 'Pausado'}
+                    </Badge>
+                  </Table.Td>
+                  <Table.Td>
+                    <Text fw={500}>{job.name}</Text>
+                    <Text size="xs" c="dimmed" lineClamp={1}>
+                      {job.payload?.kind === 'agentTurn' 
+                        ? job.payload.message?.slice(0, 60) + '...'
+                        : job.payload?.text?.slice(0, 60) + '...'}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="sm">{formatSchedule(job.schedule)}</Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="sm">
+                      {job.nextRun 
+                        ? new Date(job.nextRun).toLocaleString('es-ES', { 
+                            day: 'numeric', 
+                            month: 'short', 
+                            hour: '2-digit', 
+                            minute: '2-digit' 
+                          })
+                        : '-'}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Group gap="xs">
+                      <Button size="xs" variant="subtle" onClick={handleAction}>
+                        Ejecutar
+                      </Button>
+                      <Button size="xs" variant="subtle" onClick={handleAction}>
+                        {job.enabled ? 'Pausar' : 'Activar'}
+                      </Button>
+                    </Group>
+                  </Table.Td>
+                </Table.Tr>
               ))}
             </Table.Tbody>
           </Table>
@@ -238,27 +201,11 @@ export function CronJobsPage() {
           <Stack align="center" gap="md" py="xl">
             <IconCalendarOff size={48} style={{ opacity: 0.5 }} />
             <Text c="dimmed">
-              {searchQuery || instanceFilter
-                ? 'No hay jobs que coincidan con los filtros'
-                : 'No hay cron jobs configurados'}
+              {searchQuery ? 'No hay crons que coincidan con la búsqueda' : 'No hay cron jobs configurados'}
             </Text>
-            {!searchQuery && !instanceFilter && (
-              <Button leftSection={<IconPlus size={18} />} onClick={handleCreateJob}>
-                Crear tu primer job
-              </Button>
-            )}
           </Stack>
         </Paper>
       )}
-
-      {/* Modal */}
-      <CronJobModal
-        opened={modalOpened}
-        onClose={closeModal}
-        onSubmit={handleSubmitJob}
-        instances={instances}
-        editingJob={editingJob}
-      />
     </Box>
   );
 }

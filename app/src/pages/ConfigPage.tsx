@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { Box, Title, Text, Paper, Group, Textarea, Button, Badge, Stack, ActionIcon, Tooltip, Select, Code } from '@mantine/core';
+import { Box, Title, Text, Paper, Group, Textarea, Button, Badge, Stack, ActionIcon, Tooltip, Select, Code, Alert, Loader, Center } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconFileText, IconDeviceFloppy, IconRefresh, IconCopy, IconCheck } from '@tabler/icons-react';
+import { IconFileText, IconDeviceFloppy, IconRefresh, IconCopy, IconCheck, IconAlertTriangle, IconCloudUpload } from '@tabler/icons-react';
 import { useClipboard } from '@mantine/hooks';
-import type { Instance, ConfigFile, ConfigFileName } from '@/types';
+import { useInstances } from '@/hooks/useFirestore';
+import { useConfigFiles, useSaveConfigEdit } from '@/hooks/useConfig';
+import type { Instance } from '@/types';
 
-// Mock data
+// Mock fallback
 const mockInstances: Instance[] = [
   {
     id: 'alvi',
@@ -23,85 +25,7 @@ const mockInstances: Instance[] = [
   },
 ];
 
-const mockConfigFiles: Record<string, ConfigFile[]> = {
-  alvi: [
-    {
-      name: 'SOUL.md',
-      path: '/home/drdelco/.openclaw/workspace/SOUL.md',
-      content: `# SOUL.md — Alvi
-
-## Identidad
-
-Soy Alvi, el asistente de NG y Diego, su CEO. Soy un agente de inteligencia artificial al servicio de la familia de Diego y de su empresa médica, NG Clínicas.
-
-## Personalidad
-
-- Profesional, eficiente, directo y cercano
-- Hablo siempre en español salvo que me hablen en otro idioma
-- Trato de usted a los pacientes y de tú a la familia`,
-      lastModified: new Date(Date.now() - 3600000),
-    },
-    {
-      name: 'MEMORY.md',
-      path: '/home/drdelco/.openclaw/workspace/MEMORY.md',
-      content: `# MEMORY.md — Memoria del agente
-
-## Contexto de NG Clínicas
-
-* Clínica privada de neurocirugía de columna en España
-* Diego es el cirujano principal y CEO
-* Sistemas: SaluFirst, SaluFact, SaluFile, SaluHold
-
-## Stack tecnológico
-
-* Frontend: React + TypeScript
-* Backend: Firebase Functions
-* Base de datos: Firestore`,
-      lastModified: new Date(Date.now() - 7200000),
-    },
-    {
-      name: 'USER.md',
-      path: '/home/drdelco/.openclaw/workspace/USER.md',
-      content: `# USER.md — Información sobre los usuarios
-
-## Diego (Admin)
-
-* Profesión: Neurocirujano
-* Rol: CEO de NG Clínicas
-* Ubicación: Elche, Alicante, España
-* Idioma: Español (nativo), Inglés (profesional)`,
-      lastModified: new Date(Date.now() - 86400000),
-    },
-    {
-      name: 'HEARTBEAT.md',
-      path: '/home/drdelco/.openclaw/workspace/HEARTBEAT.md',
-      content: `# HEARTBEAT.md - Tareas periódicas
-
-## Revisión de emails de Diego
-- Revisar diegoferrandezsempere@gmail.com cada día
-- Alertar sobre emails urgentes
-- Clasificar: 🔴 Urgente / 🟡 Importante / 🟢 Rutina`,
-      lastModified: new Date(Date.now() - 172800000),
-    },
-    {
-      name: 'AGENTS.md',
-      path: '/home/drdelco/.openclaw/workspace/AGENTS.md',
-      content: `# AGENTS.md - Your Workspace
-
-This folder is home. Treat it that way.
-
-## Every Session
-
-Before doing anything else:
-1. Read SOUL.md — this is who you are
-2. Read USER.md — this is who you're helping
-3. Read memory/YYYY-MM-DD.md for recent context`,
-      lastModified: new Date(Date.now() - 259200000),
-    },
-  ],
-};
-
-const configFileDescriptions: Record<ConfigFileName, string> = {
+const configFileDescriptions: Record<string, string> = {
   'SOUL.md': 'Personalidad y comportamiento del agente',
   'MEMORY.md': 'Memoria a largo plazo y contexto',
   'USER.md': 'Información sobre los usuarios',
@@ -112,16 +36,57 @@ const configFileDescriptions: Record<ConfigFileName, string> = {
 };
 
 export function ConfigPage() {
-  const [selectedInstance, setSelectedInstance] = useState<string>(mockInstances[0]?.id || '');
+  const [selectedInstance, setSelectedInstance] = useState<string>('alvi');
   const [activeFile, setActiveFile] = useState<string>('SOUL.md');
   const [editedContent, setEditedContent] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const clipboard = useClipboard();
 
-  const instances = mockInstances;
-  const configFiles = mockConfigFiles[selectedInstance] || [];
-  const currentFile = configFiles.find((f) => f.name === activeFile);
+  // Request immediate sync - direct call to sync server
+  const requestSync = async () => {
+    setSyncing(true);
+    try {
+      const response = await fetch('http://35.241.159.137:8787/sync/config', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer lobsterclaw-sync-2026',
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      const result = await response.json();
+      
+      if (response.ok) {
+        notifications.show({
+          title: '✅ Sincronización completada',
+          message: 'Archivos sincronizados correctamente',
+          color: 'green',
+          icon: <IconCheck size={16} />,
+        });
+        // Reload the page to show updated content
+        window.location.reload();
+      } else {
+        throw new Error(result.error || 'Error en sincronización');
+      }
+    } catch (error: any) {
+      notifications.show({
+        title: 'Error',
+        message: error.message || 'No se pudo sincronizar',
+        color: 'red',
+      });
+    }
+    setSyncing(false);
+  };
+
+  // Firestore data
+  const { instances: firestoreInstances } = useInstances();
+  const { files: configFiles, loading: loadingFiles, error: filesError } = useConfigFiles(selectedInstance);
+  const { saveEdit, saving } = useSaveConfigEdit(selectedInstance);
+
+  const instances = firestoreInstances.length > 0 ? firestoreInstances : mockInstances;
+  const isLiveData = configFiles.length > 0 && !filesError;
   
+  const currentFile = configFiles.find((f) => f.name === activeFile);
   const currentContent = editedContent[activeFile] ?? currentFile?.content ?? '';
   const hasChanges = currentFile && editedContent[activeFile] !== undefined && editedContent[activeFile] !== currentFile.content;
 
@@ -132,13 +97,12 @@ export function ConfigPage() {
   const handleSave = async () => {
     if (!currentFile || !hasChanges) return;
     
-    setSaving(true);
+    const success = await saveEdit(activeFile, editedContent[activeFile], currentFile.content);
     
-    // Simulate save
-    setTimeout(() => {
+    if (success) {
       notifications.show({
-        title: 'Guardado',
-        message: `${activeFile} ha sido actualizado`,
+        title: 'Cambios enviados',
+        message: `Los cambios de ${activeFile} serán aplicados por Alvi en breve`,
         color: 'green',
         icon: <IconCheck size={16} />,
       });
@@ -147,9 +111,13 @@ export function ConfigPage() {
       const newEdited = { ...editedContent };
       delete newEdited[activeFile];
       setEditedContent(newEdited);
-      
-      setSaving(false);
-    }, 500);
+    } else {
+      notifications.show({
+        title: 'Error',
+        message: 'No se pudieron guardar los cambios',
+        color: 'red',
+      });
+    }
   };
 
   const handleRevert = () => {
@@ -182,6 +150,14 @@ export function ConfigPage() {
     });
   };
 
+  if (loadingFiles) {
+    return (
+      <Center h={400}>
+        <Loader size="lg" />
+      </Center>
+    );
+  }
+
   return (
     <Box p="xl">
       <Group justify="space-between" mb="xl">
@@ -191,19 +167,51 @@ export function ConfigPage() {
             Edita los archivos de configuración de tus instancias
           </Text>
         </Box>
-        <Select
+        <Group>
+          <Button
+            variant="light"
+            leftSection={<IconCloudUpload size={16} />}
+            onClick={requestSync}
+            loading={syncing}
+          >
+            Sincronizar ahora
+          </Button>
+          <Select
           value={selectedInstance}
           onChange={(v) => {
             setSelectedInstance(v || '');
             setEditedContent({});
+            setActiveFile('SOUL.md');
           }}
           data={instances.map((i) => ({ 
             value: i.id, 
             label: `${i.emoji || '🤖'} ${i.name}` 
           }))}
           w={200}
-        />
+          />
+        </Group>
       </Group>
+
+      {/* Data source indicator */}
+      {isLiveData ? (
+        <Alert color="green" mb="xl" icon={<IconCheck />}>
+          <Group justify="space-between">
+            <Text size="sm">
+              <strong>✅ DATOS REALES</strong> — Archivos sincronizados desde el servidor
+            </Text>
+            <Badge color="green" variant="filled">LIVE</Badge>
+          </Group>
+        </Alert>
+      ) : (
+        <Alert color="orange" mb="xl" icon={<IconAlertTriangle />}>
+          <Group justify="space-between">
+            <Text size="sm">
+              <strong>⚠️ SIN CONEXIÓN</strong> — No se pudieron cargar los archivos de configuración
+            </Text>
+            <Badge color="orange" variant="filled">OFFLINE</Badge>
+          </Group>
+        </Alert>
+      )}
 
       <Group align="flex-start" gap="lg">
         {/* File tabs on the left */}
@@ -242,7 +250,7 @@ export function ConfigPage() {
                     {hasChanges && <Badge color="yellow" size="sm">Sin guardar</Badge>}
                   </Group>
                   <Text size="xs" c="dimmed">
-                    {configFileDescriptions[currentFile.name as ConfigFileName] || 'Archivo de configuración'}
+                    {configFileDescriptions[currentFile.name] || currentFile.name}
                   </Text>
                 </Box>
                 <Group gap="xs">
@@ -303,7 +311,11 @@ export function ConfigPage() {
           ) : (
             <Stack align="center" justify="center" h={400} gap="md">
               <IconFileText size={48} style={{ opacity: 0.5 }} />
-              <Text c="dimmed">Selecciona un archivo para editar</Text>
+              <Text c="dimmed">
+                {configFiles.length === 0 
+                  ? 'No hay archivos de configuración disponibles' 
+                  : 'Selecciona un archivo para editar'}
+              </Text>
             </Stack>
           )}
         </Paper>

@@ -1,28 +1,37 @@
-import { Box, Title, Text, Paper, Stack, Switch, Select, TextInput, Button, Group, Divider, NumberInput, Badge } from '@mantine/core';
+import { useState, useEffect } from 'react';
+import { Box, Title, Text, Paper, Stack, Switch, Button, Group, Badge, Alert, Loader } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { useState } from 'react';
-import { IconCheck } from '@tabler/icons-react';
+import { IconCheck, IconServer, IconRefresh, IconAlertTriangle } from '@tabler/icons-react';
 
 export function SettingsPage() {
   const [darkMode, setDarkMode] = useState(true);
-  const [notifications24h, setNotifications24h] = useState(true);
-  const [budgetAlerts, setBudgetAlerts] = useState(true);
-  const [budgetThreshold, setBudgetThreshold] = useState(80);
-  const [defaultModel, setDefaultModel] = useState('anthropic/claude-opus-4-5');
-  const [saving, setSaving] = useState(false);
+  const [serverStatus, setServerStatus] = useState<'checking' | 'online' | 'offline'>('checking');
+  const [serverTimestamp, setServerTimestamp] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
 
-  const handleSave = () => {
-    setSaving(true);
-    setTimeout(() => {
-      setSaving(false);
-      notifications.show({
-        title: 'Guardado',
-        message: 'Configuración actualizada',
-        color: 'green',
-        icon: <IconCheck size={16} />,
+  const checkServer = async () => {
+    setChecking(true);
+    setServerStatus('checking');
+    try {
+      const response = await fetch('http://35.241.159.137:8787/health', {
+        method: 'GET',
       });
-    }, 500);
+      if (response.ok) {
+        const data = await response.json();
+        setServerStatus('online');
+        setServerTimestamp(data.timestamp);
+      } else {
+        setServerStatus('offline');
+      }
+    } catch (err) {
+      setServerStatus('offline');
+    }
+    setChecking(false);
   };
+
+  useEffect(() => {
+    checkServer();
+  }, []);
 
   return (
     <Box p="xl">
@@ -32,110 +41,139 @@ export function SettingsPage() {
       </Text>
 
       <Stack gap="lg" maw={600}>
+        {/* Server status */}
+        <Paper p="lg" radius="md" withBorder>
+          <Group justify="space-between" mb="md">
+            <Group gap="sm">
+              <IconServer size={20} />
+              <Text fw={600}>Estado del servidor</Text>
+            </Group>
+            <Button 
+              size="xs" 
+              variant="subtle" 
+              leftSection={<IconRefresh size={14} />}
+              onClick={checkServer}
+              loading={checking}
+            >
+              Verificar
+            </Button>
+          </Group>
+          
+          {serverStatus === 'checking' ? (
+            <Group gap="sm">
+              <Loader size="sm" />
+              <Text size="sm" c="dimmed">Comprobando conexión...</Text>
+            </Group>
+          ) : serverStatus === 'online' ? (
+            <Alert color="green" icon={<IconCheck />}>
+              <Group justify="space-between">
+                <Text size="sm">
+                  <strong>✅ Servidor online</strong>
+                  {serverTimestamp && ` · ${new Date(serverTimestamp).toLocaleString('es-ES')}`}
+                </Text>
+                <Badge color="green">CONECTADO</Badge>
+              </Group>
+            </Alert>
+          ) : (
+            <Alert color="red" icon={<IconAlertTriangle />}>
+              <Group justify="space-between">
+                <Text size="sm">
+                  <strong>❌ Servidor offline</strong> — El sync server no responde
+                </Text>
+                <Badge color="red">DESCONECTADO</Badge>
+              </Group>
+            </Alert>
+          )}
+          
+          <Stack gap="xs" mt="md">
+            <Group justify="space-between">
+              <Text size="sm" c="dimmed">IP:</Text>
+              <Text size="sm" ff="monospace">35.241.159.137:8787</Text>
+            </Group>
+            <Group justify="space-between">
+              <Text size="sm" c="dimmed">Proyecto Firebase:</Text>
+              <Text size="sm" ff="monospace">lobsterclaw-c9af9</Text>
+            </Group>
+          </Stack>
+        </Paper>
+
         {/* Appearance */}
         <Paper p="lg" radius="md" withBorder>
           <Text fw={600} mb="md">Apariencia</Text>
           <Stack gap="md">
             <Switch
               label="Modo oscuro"
-              description="Usar tema oscuro en el dashboard"
+              description="Usar tema oscuro en el dashboard (siempre activo)"
               checked={darkMode}
               onChange={(e) => setDarkMode(e.target.checked)}
-            />
-          </Stack>
-        </Paper>
-
-        {/* Notifications */}
-        <Paper p="lg" radius="md" withBorder>
-          <Text fw={600} mb="md">Notificaciones</Text>
-          <Stack gap="md">
-            <Switch
-              label="Notificaciones 24h"
-              description="Recibir notificaciones fuera del horario de oficina"
-              checked={notifications24h}
-              onChange={(e) => setNotifications24h(e.target.checked)}
-            />
-            <Divider />
-            <Switch
-              label="Alertas de presupuesto"
-              description="Notificar cuando el gasto supere el umbral"
-              checked={budgetAlerts}
-              onChange={(e) => setBudgetAlerts(e.target.checked)}
-            />
-            {budgetAlerts && (
-              <NumberInput
-                label="Umbral de alerta (%)"
-                value={budgetThreshold}
-                onChange={(v) => setBudgetThreshold(Number(v) || 80)}
-                min={50}
-                max={100}
-                step={5}
-                suffix="%"
-                w={150}
-              />
-            )}
-          </Stack>
-        </Paper>
-
-        {/* Defaults */}
-        <Paper p="lg" radius="md" withBorder>
-          <Text fw={600} mb="md">Valores por defecto</Text>
-          <Stack gap="md">
-            <Select
-              label="Modelo por defecto"
-              description="Modelo a usar cuando no se especifique otro"
-              value={defaultModel}
-              onChange={(v) => setDefaultModel(v || '')}
-              data={[
-                { value: 'anthropic/claude-opus-4-5', label: 'Claude Opus 4.5' },
-                { value: 'anthropic/claude-sonnet-4', label: 'Claude Sonnet 4' },
-                { value: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-              ]}
-            />
-          </Stack>
-        </Paper>
-
-        {/* Firebase */}
-        <Paper p="lg" radius="md" withBorder>
-          <Group justify="space-between" mb="md">
-            <Text fw={600}>Firebase</Text>
-            <Badge color="green" variant="dot">Conectado</Badge>
-          </Group>
-          <Stack gap="md">
-            <TextInput
-              label="Project ID"
-              value="openclaw-dashboard"
-              disabled
-            />
-            <TextInput
-              label="Región"
-              value="europe-west1"
               disabled
             />
           </Stack>
         </Paper>
 
-        {/* Account */}
+        {/* About */}
         <Paper p="lg" radius="md" withBorder>
-          <Text fw={600} mb="md">Cuenta</Text>
-          <Stack gap="md">
-            <TextInput
-              label="Email"
-              value="diegoferrandezsempere@gmail.com"
-              disabled
-            />
-            <Button variant="subtle" color="red">
-              Cerrar sesión
+          <Text fw={600} mb="md">Acerca de</Text>
+          <Stack gap="xs">
+            <Group justify="space-between">
+              <Text size="sm" c="dimmed">Dashboard:</Text>
+              <Text size="sm">Lobsterclaw v1.0</Text>
+            </Group>
+            <Group justify="space-between">
+              <Text size="sm" c="dimmed">Agente:</Text>
+              <Text size="sm">Alvi 🦉</Text>
+            </Group>
+            <Group justify="space-between">
+              <Text size="sm" c="dimmed">Instancia:</Text>
+              <Text size="sm">GCP e2-medium (europe-west1)</Text>
+            </Group>
+            <Group justify="space-between">
+              <Text size="sm" c="dimmed">Modelo principal:</Text>
+              <Badge variant="light">anthropic/claude-opus-4-5</Badge>
+            </Group>
+          </Stack>
+        </Paper>
+
+        {/* Actions */}
+        <Paper p="lg" radius="md" withBorder>
+          <Text fw={600} mb="md">Acciones</Text>
+          <Stack gap="sm">
+            <Button
+              variant="light"
+              fullWidth
+              onClick={async () => {
+                try {
+                  const res = await fetch('http://35.241.159.137:8787/sync/all', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer lobsterclaw-sync-2026' },
+                  });
+                  if (res.ok) {
+                    notifications.show({
+                      title: 'Sincronización completa',
+                      message: 'Todos los datos actualizados',
+                      color: 'green',
+                    });
+                  }
+                } catch (e) {
+                  notifications.show({ title: 'Error', message: 'No se pudo sincronizar', color: 'red' });
+                }
+              }}
+            >
+              Sincronizar todo ahora
+            </Button>
+            <Button
+              variant="subtle"
+              color="red"
+              fullWidth
+              onClick={() => {
+                localStorage.clear();
+                window.location.reload();
+              }}
+            >
+              Limpiar caché local
             </Button>
           </Stack>
         </Paper>
-
-        {/* Save */}
-        <Group justify="flex-end">
-          <Button onClick={handleSave} loading={saving}>
-            Guardar cambios
-          </Button>
-        </Group>
       </Stack>
     </Box>
   );

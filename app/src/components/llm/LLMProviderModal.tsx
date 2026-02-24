@@ -1,160 +1,168 @@
-import { Modal, TextInput, PasswordInput, Select, Stack, Group, Button, Switch, Text, Divider } from '@mantine/core';
-import { useForm } from '@mantine/form';
-import type { LLMProvider, LLMModel } from '@/types';
+import { useState, useEffect } from 'react';
+import { Modal, TextInput, PasswordInput, Select, Stack, Group, Button, Switch, Text, Divider, Paper, Table } from '@mantine/core';
+
+interface CatalogEntry {
+  provider: string;
+  name: string;
+  icon: string;
+  models: { id: string; name: string; input?: number; output?: number }[];
+}
 
 interface LLMProviderModalProps {
   opened: boolean;
   onClose: () => void;
-  onSubmit: (provider: Partial<LLMProvider>) => void;
-  editingProvider?: LLMProvider;
+  onSubmit: (data: {
+    provider: string;
+    name: string;
+    icon: string;
+    apiKey: string;
+    baseUrl?: string;
+    isActive: boolean;
+    models: { id: string; name: string; input: number; output: number }[];
+  }) => void;
+  editingProvider?: any;
+  catalog: Record<string, CatalogEntry>;
 }
 
-// Predefined provider templates
-const providerTemplates: Record<string, { baseUrl?: string; models: Partial<LLMModel>[] }> = {
-  Anthropic: {
-    models: [
-      { id: 'claude-opus-4-5', name: 'claude-opus-4-5', alias: 'opus', inputCostPer1k: 0.015, outputCostPer1k: 0.075 },
-      { id: 'claude-sonnet-4', name: 'claude-sonnet-4', alias: 'sonnet', inputCostPer1k: 0.003, outputCostPer1k: 0.015 },
-    ],
-  },
-  Google: {
-    models: [
-      { id: 'gemini-2.5-pro', name: 'gemini-2.5-pro', inputCostPer1k: 0.00125, outputCostPer1k: 0.005 },
-      { id: 'gemini-2.5-flash', name: 'gemini-2.5-flash', inputCostPer1k: 0.000075, outputCostPer1k: 0.0003 },
-    ],
-  },
-  OpenAI: {
-    models: [
-      { id: 'gpt-4o', name: 'gpt-4o', inputCostPer1k: 0.005, outputCostPer1k: 0.015 },
-      { id: 'gpt-4o-mini', name: 'gpt-4o-mini', inputCostPer1k: 0.00015, outputCostPer1k: 0.0006 },
-    ],
-  },
-  Zhipu: {
-    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-    models: [
-      { id: 'glm-5', name: 'glm-5', inputCostPer1k: 0.002, outputCostPer1k: 0.006 },
-    ],
-  },
-  Custom: {
-    models: [],
-  },
+const KEY_PLACEHOLDERS: Record<string, string> = {
+  anthropic: 'sk-ant-...',
+  google: 'AIza...',
+  openrouter: 'sk-or-...',
+  deepseek: 'sk-...',
 };
 
-export function LLMProviderModal({ opened, onClose, onSubmit, editingProvider }: LLMProviderModalProps) {
-  const form = useForm({
-    initialValues: {
-      name: editingProvider?.name || '',
-      apiKey: editingProvider?.apiKey || '',
-      baseUrl: editingProvider?.baseUrl || '',
-      isActive: editingProvider?.isActive ?? true,
-    },
-    validate: {
-      name: (value) => (!value ? 'Nombre requerido' : null),
-      apiKey: (value) => (!value ? 'API Key requerida' : null),
-    },
-  });
+export function LLMProviderModal({ opened, onClose, onSubmit, editingProvider, catalog }: LLMProviderModalProps) {
+  const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
+  const [apiKey, setApiKey] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
+  const [isActive, setIsActive] = useState(true);
 
-  const handleProviderSelect = (name: string) => {
-    form.setFieldValue('name', name);
-    const template = providerTemplates[name];
-    if (template?.baseUrl) {
-      form.setFieldValue('baseUrl', template.baseUrl);
+  const entry = selectedProvider ? catalog[selectedProvider] : null;
+
+  useEffect(() => {
+    if (editingProvider) {
+      setSelectedProvider(editingProvider.provider || null);
+      setApiKey('');
+      setBaseUrl(editingProvider.baseUrl || '');
+      setIsActive(editingProvider.isActive ?? true);
     } else {
-      form.setFieldValue('baseUrl', '');
+      setSelectedProvider(null);
+      setApiKey('');
+      setBaseUrl('');
+      setIsActive(true);
     }
-  };
+  }, [editingProvider, opened]);
 
-  const handleSubmit = form.onSubmit((values) => {
-    const template = providerTemplates[values.name] || providerTemplates.Custom;
-    
+  const handleSubmit = () => {
+    if (!selectedProvider || !entry) return;
+    if (!apiKey && !editingProvider) return;
+
     onSubmit({
-      id: editingProvider?.id,
-      name: values.name,
-      apiKey: values.apiKey,
-      baseUrl: values.baseUrl || undefined,
-      isActive: values.isActive,
-      models: template.models.map((m) => ({
-        id: m.id!,
-        name: m.name!,
-        alias: m.alias,
-        inputCostPer1k: m.inputCostPer1k || 0,
-        outputCostPer1k: m.outputCostPer1k || 0,
-        maxTokens: m.maxTokens || 128000,
+      provider: selectedProvider,
+      name: entry.name,
+      icon: entry.icon,
+      apiKey: apiKey || '',
+      baseUrl: baseUrl || undefined,
+      isActive,
+      models: entry.models.map(m => ({
+        id: m.id,
+        name: m.name,
+        input: m.input || 0,
+        output: m.output || 0,
       })),
-      testStatus: 'unknown',
     });
     onClose();
-    form.reset();
-  });
+  };
+
+  const providerOptions = Object.entries(catalog).map(([key, cat]) => ({
+    value: key,
+    label: `${cat.icon} ${cat.name} (${cat.models?.length || 0} modelos)`,
+  }));
 
   return (
     <Modal
       opened={opened}
       onClose={onClose}
-      title={editingProvider ? 'Editar Proveedor LLM' : 'Añadir Proveedor LLM'}
-      size="md"
+      title={editingProvider ? `Editar ${editingProvider.name}` : 'Añadir Proveedor LLM'}
+      size="lg"
     >
-      <form onSubmit={handleSubmit}>
-        <Stack gap="md">
-          {!editingProvider && (
-            <Select
-              label="Proveedor"
-              placeholder="Selecciona un proveedor"
-              data={Object.keys(providerTemplates)}
-              value={form.values.name}
-              onChange={(v) => handleProviderSelect(v || '')}
-              required
-            />
-          )}
+      <Stack gap="md">
+        <Select
+          label="Proveedor"
+          placeholder="Selecciona un proveedor..."
+          data={providerOptions}
+          value={selectedProvider}
+          onChange={setSelectedProvider}
+          disabled={!!editingProvider}
+          searchable
+          required
+        />
 
-          {editingProvider && (
-            <TextInput
-              label="Nombre"
-              value={form.values.name}
-              disabled
-            />
-          )}
+        <PasswordInput
+          label="API Key"
+          placeholder={selectedProvider ? (KEY_PLACEHOLDERS[selectedProvider] || 'sk-...') : 'sk-...'}
+          value={apiKey}
+          onChange={(e) => setApiKey(e.currentTarget.value)}
+          description={editingProvider ? 'Dejar vacío para mantener la actual' : undefined}
+          required={!editingProvider}
+        />
 
-          <PasswordInput
-            label="API Key"
-            placeholder="sk-..."
-            required
-            {...form.getInputProps('apiKey')}
-          />
+        <TextInput
+          label="Base URL (opcional)"
+          placeholder="https://api.example.com/v1"
+          value={baseUrl}
+          onChange={(e) => setBaseUrl(e.currentTarget.value)}
+        />
 
-          <TextInput
-            label="Base URL (opcional)"
-            placeholder="https://api.example.com/v1"
-            description="Dejar vacío para usar la URL por defecto del proveedor"
-            {...form.getInputProps('baseUrl')}
-          />
+        <Switch
+          label="Proveedor activo"
+          checked={isActive}
+          onChange={(e) => setIsActive(e.currentTarget.checked)}
+        />
 
-          <Switch
-            label="Proveedor activo"
-            description="Los proveedores inactivos no se usarán para completions"
-            checked={form.values.isActive}
-            onChange={(e) => form.setFieldValue('isActive', e.target.checked)}
-          />
+        {entry && entry.models.length > 0 && (
+          <>
+            <Divider label={`${entry.models.length} modelos disponibles`} labelPosition="center" />
+            <Paper p="sm" radius="sm" withBorder style={{ maxHeight: 300, overflow: 'auto' }}>
+              <Table>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Modelo</Table.Th>
+                    <Table.Th style={{ textAlign: 'right' }}>Input $/1M</Table.Th>
+                    <Table.Th style={{ textAlign: 'right' }}>Output $/1M</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {entry.models.slice(0, 50).map((m) => (
+                    <Table.Tr key={m.id}>
+                      <Table.Td>
+                        <Text size="sm">{m.name}</Text>
+                        <Text size="xs" c="dimmed">{m.id}</Text>
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>${(m.input || 0).toFixed(2)}</Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>${(m.output || 0).toFixed(2)}</Table.Td>
+                    </Table.Tr>
+                  ))}
+                  {entry.models.length > 50 && (
+                    <Table.Tr>
+                      <Table.Td colSpan={3}>
+                        <Text size="xs" c="dimmed" ta="center">...y {entry.models.length - 50} modelos más</Text>
+                      </Table.Td>
+                    </Table.Tr>
+                  )}
+                </Table.Tbody>
+              </Table>
+            </Paper>
+          </>
+        )}
 
-          {form.values.name && providerTemplates[form.values.name] && (
-            <>
-              <Divider label="Modelos incluidos" labelPosition="center" />
-              <Text size="sm" c="dimmed">
-                {providerTemplates[form.values.name].models.length > 0 ? (
-                  providerTemplates[form.values.name].models.map((m) => m.name).join(', ')
-                ) : (
-                  'Configura los modelos después de crear el proveedor'
-                )}
-              </Text>
-            </>
-          )}
-
-          <Group justify="flex-end" mt="md">
-            <Button variant="subtle" onClick={onClose}>Cancelar</Button>
-            <Button type="submit">{editingProvider ? 'Guardar' : 'Añadir'}</Button>
-          </Group>
-        </Stack>
-      </form>
+        <Group justify="flex-end" mt="md">
+          <Button variant="subtle" onClick={onClose}>Cancelar</Button>
+          <Button onClick={handleSubmit} disabled={!selectedProvider || (!apiKey && !editingProvider)}>
+            {editingProvider ? 'Guardar' : 'Añadir'}
+          </Button>
+        </Group>
+      </Stack>
     </Modal>
   );
 }

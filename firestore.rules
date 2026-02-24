@@ -11,13 +11,19 @@ service cloud.firestore {
     // Helper: Check if user is the admin (Diego)
     function isAdmin() {
       return isAuthenticated() && 
-             request.auth.token.email == 'diegoferrandezsempere@gmail.com';
+             (request.auth.token.email == 'diegoferrandezsempere@gmail.com' ||
+              request.auth.token.email == 'drdelco@gmail.com');
     }
     
-    // Instances collection
+    // Server write access (using secret key in document)
+    function isServerWrite() {
+      return request.resource.data.serverKey == 'alvi-openclaw-2026';
+    }
+    
+    // Instances collection — server reads allowed if doc has a serverKey (any valid instance)
     match /instances/{instanceId} {
-      allow read: if isAdmin();
-      allow write: if isAdmin();
+      allow read: if isAdmin() || (resource.data.serverKey is string && resource.data.serverKey.size() > 0);
+      allow write: if isAdmin() || isServerWrite();
       
       // Costs subcollection
       match /costs/{costId} {
@@ -38,22 +44,110 @@ service cloud.firestore {
       }
     }
     
-    // LLM Providers collection
+    // LLM Providers collection (legacy)
     match /llmProviders/{providerId} {
       allow read: if isAdmin();
       allow write: if isAdmin();
     }
     
-    // Cron Jobs collection
+    // LLMs collection — shared across all instances
+    match /llms/{docId} {
+      allow read: if isAdmin() || resource.data.serverKey == 'alvi-openclaw-2026';
+      allow write: if isAdmin() || isServerWrite();
+      
+      // Legacy per-instance subcollections (kept for backward compat)
+      match /{sub}/{subDocId} {
+        allow read: if isAdmin() || resource.data.serverKey == 'alvi-openclaw-2026';
+        allow write: if isAdmin() || isServerWrite();
+        allow delete: if isAdmin() || (resource.data.serverKey == 'alvi-openclaw-2026');
+      }
+    }
+    
+    // Shared model catalog
+    match /llms/catalog/{providerId} {
+      allow read: if isAdmin() || resource.data.serverKey == 'alvi-openclaw-2026';
+      allow write: if isAdmin() || isServerWrite();
+    }
+    
+    // Shared providers (API keys, config)
+    match /llms/providers/{providerId} {
+      allow read: if isAdmin() || resource.data.serverKey == 'alvi-openclaw-2026';
+      allow write: if isAdmin() || isServerWrite();
+      allow delete: if isAdmin() || (resource.data.serverKey == 'alvi-openclaw-2026');
+    }
+    
+    // Cron Jobs collection (legacy)
     match /cronJobs/{jobId} {
       allow read: if isAdmin();
       allow write: if isAdmin();
+    }
+    
+    // Crons collection (real data)
+    match /crons/{instanceId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin() || isServerWrite();
+      
+      match /jobs/{jobId} {
+        allow read: if isAdmin();
+        allow write: if isAdmin() || isServerWrite();
+      }
     }
     
     // Settings collection
     match /settings/{settingId} {
       allow read: if isAdmin();
       allow write: if isAdmin();
+    }
+    
+    // Top-level costs collection (for server sync)
+    match /costs/{instanceId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin() || isServerWrite();
+      
+      match /months/{monthId} {
+        allow read: if isAdmin();
+        allow write: if isAdmin() || isServerWrite();
+      }
+    }
+    
+    // Summary collection (quick stats)
+    match /summary/{instanceId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin() || isServerWrite();
+    }
+    
+    // Chat collection (dashboard ↔ Alvi)
+    match /chat/{instanceId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+      
+      match /messages/{messageId} {
+        allow read: if isAdmin();
+        allow write: if isAdmin() || isServerWrite();
+      }
+    }
+    
+    // Sync requests (dashboard → server)
+    match /syncRequests/{requestId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+    
+    // Config collection (workspace files)
+    match /config/{instanceId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin() || isServerWrite();
+      
+      match /files/{fileId} {
+        allow read: if isAdmin();
+        allow write: if isAdmin() || isServerWrite();
+      }
+      
+      // Pending edits from dashboard
+      match /pending/{editId} {
+        allow read: if isAdmin();
+        allow write: if isAdmin();
+      }
     }
     
     // Deny all other access

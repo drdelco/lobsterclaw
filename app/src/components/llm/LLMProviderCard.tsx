@@ -1,74 +1,60 @@
-import { Card, Group, Text, Badge, ActionIcon, Menu, Stack, ThemeIcon, Code } from '@mantine/core';
-import { IconDots, IconPencil, IconTrash, IconRefresh, IconCheck, IconX, IconKey } from '@tabler/icons-react';
-import type { LLMProvider } from '@/types';
+import { Card, Group, Text, Badge, ActionIcon, Menu, Stack, ThemeIcon, Tooltip, Switch } from '@mantine/core';
+import { IconDots, IconPencil, IconTrash, IconRefresh, IconCheck, IconX, IconPlugConnected } from '@tabler/icons-react';
 
-interface LLMProviderCardProps {
-  provider: LLMProvider;
+interface ProviderCardProps {
+  provider: {
+    id: string;
+    name: string;
+    icon: string;
+    provider: string;
+    isActive: boolean;
+    models: any[];
+    apiKeyMasked?: string;
+    testStatus?: string;
+  };
   onEdit: () => void;
   onDelete: () => void;
   onTest: () => void;
-  onToggle: () => void;
+  onToggle: (active: boolean) => void;
 }
 
-export function LLMProviderCard({ provider, onEdit, onDelete, onTest, onToggle }: LLMProviderCardProps) {
-  const statusColors: Record<string, string> = {
-    ok: 'green',
-    error: 'red',
-    unknown: 'gray',
-  };
-
-  const statusLabels: Record<string, string> = {
-    ok: 'Conectado',
-    error: 'Error',
-    unknown: 'Sin probar',
-  };
-
-  const providerLogos: Record<string, string> = {
-    anthropic: '🅰️',
-    google: '🔷',
-    openai: '🟢',
-    zhipu: '🔵',
-  };
-
-  const maskApiKey = (key: string) => {
-    if (key.length <= 8) return '••••••••';
-    return key.slice(0, 4) + '••••' + key.slice(-4);
-  };
+export function LLMProviderCard({ provider, onEdit, onDelete, onTest, onToggle }: ProviderCardProps) {
+  const statusColor = provider.testStatus === 'ok' ? 'green' : provider.testStatus === 'error' ? 'red' : 'gray';
 
   return (
-    <Card shadow="sm" padding="lg" radius="md" withBorder>
+    <Card shadow="sm" padding="lg" radius="md" withBorder style={{ cursor: 'pointer' }} onClick={onEdit}>
       <Group justify="space-between" mb="md">
         <Group gap="sm">
-          <Text size="xl">{providerLogos[provider.name.toLowerCase()] || '🤖'}</Text>
+          <Text size="2rem">{provider.icon || '⚪'}</Text>
           <div>
-            <Text fw={600}>{provider.name}</Text>
-            <Text size="xs" c="dimmed">{provider.models.length} modelos</Text>
+            <Text fw={600} size="lg">{provider.name}</Text>
+            <Text size="xs" c="dimmed">{provider.models?.length || 0} modelos</Text>
           </div>
         </Group>
         <Group gap="xs">
-          <Badge 
-            color={provider.isActive ? 'green' : 'gray'} 
-            variant="dot"
-            style={{ cursor: 'pointer' }}
-            onClick={onToggle}
-          >
-            {provider.isActive ? 'Activo' : 'Inactivo'}
-          </Badge>
+          <Tooltip label={provider.isActive ? 'Desactivar' : 'Activar'}>
+            <Switch
+              checked={provider.isActive}
+              onChange={(e) => { e.stopPropagation(); onToggle(e.currentTarget.checked); }}
+              onClick={(e) => e.stopPropagation()}
+              size="sm"
+            />
+          </Tooltip>
           <Menu position="bottom-end">
             <Menu.Target>
-              <ActionIcon variant="subtle">
+              <ActionIcon variant="subtle" onClick={(e) => e.stopPropagation()}>
                 <IconDots size={16} />
               </ActionIcon>
             </Menu.Target>
             <Menu.Dropdown>
-              <Menu.Item leftSection={<IconRefresh size={14} />} onClick={onTest}>
+              <Menu.Item leftSection={<IconPlugConnected size={14} />} onClick={(e) => { e.stopPropagation(); onTest(); }}>
                 Probar conexión
               </Menu.Item>
-              <Menu.Item leftSection={<IconPencil size={14} />} onClick={onEdit}>
+              <Menu.Item leftSection={<IconPencil size={14} />} onClick={(e) => { e.stopPropagation(); onEdit(); }}>
                 Editar
               </Menu.Item>
               <Menu.Divider />
-              <Menu.Item leftSection={<IconTrash size={14} />} color="red" onClick={onDelete}>
+              <Menu.Item leftSection={<IconTrash size={14} />} color="red" onClick={(e) => { e.stopPropagation(); onDelete(); }}>
                 Eliminar
               </Menu.Item>
             </Menu.Dropdown>
@@ -77,58 +63,30 @@ export function LLMProviderCard({ provider, onEdit, onDelete, onTest, onToggle }
       </Group>
 
       <Stack gap="xs">
-        <Group gap="xs">
-          <IconKey size={14} style={{ opacity: 0.6 }} />
-          <Text size="sm" c="dimmed">API Key:</Text>
-          <Code>{maskApiKey(provider.apiKey)}</Code>
-        </Group>
-
-        {provider.baseUrl && (
-          <Group gap="xs">
-            <Text size="sm" c="dimmed">URL:</Text>
-            <Text size="sm">{provider.baseUrl}</Text>
-          </Group>
+        {provider.apiKeyMasked && (
+          <Text size="xs" c="dimmed" ff="monospace">{provider.apiKeyMasked}</Text>
         )}
-
-        <Group gap="xs" mt="xs">
-          <ThemeIcon 
-            size="sm" 
-            radius="xl" 
-            color={statusColors[provider.testStatus]}
-            variant="light"
-          >
-            {provider.testStatus === 'ok' ? (
-              <IconCheck size={12} />
-            ) : provider.testStatus === 'error' ? (
-              <IconX size={12} />
-            ) : (
-              <IconRefresh size={12} />
-            )}
+        <Group gap={4} mt="xs">
+          <ThemeIcon size="xs" radius="xl" color={statusColor} variant="light">
+            {provider.testStatus === 'ok' ? <IconCheck size={10} /> :
+             provider.testStatus === 'error' ? <IconX size={10} /> :
+             <IconRefresh size={10} />}
           </ThemeIcon>
-          <Text size="sm" c={statusColors[provider.testStatus]}>
-            {statusLabels[provider.testStatus]}
+          <Text size="xs" c={statusColor}>
+            {provider.testStatus === 'ok' ? 'Conectado' : provider.testStatus === 'error' ? 'Error' : 'Sin probar'}
           </Text>
-          {provider.lastTested && (
-            <Text size="xs" c="dimmed">
-              • Probado {new Date(provider.lastTested).toLocaleDateString('es-ES')}
-            </Text>
+        </Group>
+        <Group gap={4} mt={4} wrap="wrap">
+          {(Array.isArray(provider.models) ? provider.models : []).slice(0, 4).map((m: any, i: number) => (
+            <Badge key={typeof m === 'string' ? m : m?.id || m?.name || i} variant="light" size="xs">
+              {typeof m === 'string' ? m : m?.name || m?.id || '?'}
+            </Badge>
+          ))}
+          {Array.isArray(provider.models) && provider.models.length > 4 && (
+            <Badge variant="outline" size="xs" c="dimmed">+{provider.models.length - 4}</Badge>
           )}
         </Group>
       </Stack>
-
-      {/* Models list */}
-      <Group gap={4} mt="md">
-        {provider.models.slice(0, 3).map((model) => (
-          <Badge key={model.id} variant="light" size="sm">
-            {model.alias || model.name}
-          </Badge>
-        ))}
-        {provider.models.length > 3 && (
-          <Badge variant="outline" size="sm" c="dimmed">
-            +{provider.models.length - 3} más
-          </Badge>
-        )}
-      </Group>
     </Card>
   );
 }

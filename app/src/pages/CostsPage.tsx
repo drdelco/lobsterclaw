@@ -1,12 +1,13 @@
-import { Box, Title, Text, SimpleGrid, Paper, Group, Select, Badge, SegmentedControl, NumberInput, Button } from '@mantine/core';
+import { Box, Title, Text, SimpleGrid, Paper, Group, Select, Badge, SegmentedControl, NumberInput, Button, Loader, Center, Alert } from '@mantine/core';
 import { AreaChart, DonutChart } from '@mantine/charts';
-import { IconCurrencyDollar, IconReceipt, IconChartPie, IconCalendar, IconAlertTriangle } from '@tabler/icons-react';
+import { IconCurrencyDollar, IconReceipt, IconChartPie, IconCalendar, IconAlertTriangle, IconRefresh } from '@tabler/icons-react';
 import { useState } from 'react';
 import { CostCard } from '@/components/costs/CostCard';
 import { CostsByInstance } from '@/components/costs/CostsByInstance';
+import { useInstances, useMonthlyCosts, useCostsSummary } from '@/hooks/useFirestore';
 import type { Instance, MonthlyCost } from '@/types';
 
-// Mock data
+// Fallback mock data (used when not authenticated or no data)
 const mockInstances: Instance[] = [
   {
     id: 'alvi',
@@ -28,38 +29,12 @@ const mockCosts: Record<string, MonthlyCost> = {
   alvi: {
     instanceId: 'alvi',
     month: '2026-02',
-    total: 47.32,
+    total: 0,
     budget: 100,
-    byProvider: {
-      anthropic: 38.50,
-      google: 8.82,
-    },
-    byModel: {
-      'anthropic/claude-opus-4-5': 35.20,
-      'anthropic/claude-sonnet-4': 3.30,
-      'google/gemini-2.5-pro': 8.82,
-    },
-    tokensByModel: {
-      'anthropic/claude-opus-4-5': { input: 125000, output: 45000 },
-      'anthropic/claude-sonnet-4': { input: 35000, output: 12000 },
-      'google/gemini-2.5-pro': { input: 89000, output: 32000 },
-    },
-    dailyCosts: [
-      { date: '2026-02-01', total: 2.10, byModel: {} },
-      { date: '2026-02-02', total: 1.85, byModel: {} },
-      { date: '2026-02-03', total: 3.20, byModel: {} },
-      { date: '2026-02-04', total: 2.45, byModel: {} },
-      { date: '2026-02-05', total: 4.10, byModel: {} },
-      { date: '2026-02-06', total: 3.75, byModel: {} },
-      { date: '2026-02-07', total: 2.90, byModel: {} },
-      { date: '2026-02-08', total: 5.20, byModel: {} },
-      { date: '2026-02-09', total: 3.85, byModel: {} },
-      { date: '2026-02-10', total: 4.50, byModel: {} },
-      { date: '2026-02-11', total: 3.15, byModel: {} },
-      { date: '2026-02-12', total: 4.80, byModel: {} },
-      { date: '2026-02-13', total: 3.27, byModel: {} },
-      { date: '2026-02-14', total: 2.20, byModel: {} },
-    ],
+    byProvider: {},
+    byModel: {},
+    tokensByModel: {},
+    dailyCosts: [],
   },
 };
 
@@ -68,38 +43,50 @@ export function CostsPage() {
   const [viewMode, setViewMode] = useState<'overview' | 'details'>('overview');
   const [budget, setBudget] = useState(100);
 
-  const instances = mockInstances;
-  const costs = mockCosts;
-  
-  const totalCost = Object.values(costs).reduce((sum, c) => sum + c.total, 0);
+  // Firestore data
+  const { instances: firestoreInstances, loading: loadingInstances, error: instancesError } = useInstances();
+  const { costs: firestoreCosts, loading: loadingCosts, error: costsError } = useMonthlyCosts('alvi', selectedMonth);
+  const { summary } = useCostsSummary('alvi');
+
+  // Use Firestore data if available, otherwise mock
+  const instances = firestoreInstances.length > 0 ? firestoreInstances : mockInstances;
+  const costs: Record<string, MonthlyCost> = firestoreCosts 
+    ? { [firestoreCosts.instanceId]: firestoreCosts } 
+    : mockCosts;
+
+  const isLoading = loadingInstances || loadingCosts;
+  const hasError = instancesError || costsError;
+  const isLiveData = firestoreCosts !== null;
+
+  const totalCost = summary?.totalMtd || Object.values(costs).reduce((sum, c) => sum + c.total, 0);
   const budgetUsage = (totalCost / budget) * 100;
   
   // Aggregate by provider
   const byProvider = Object.values(costs).reduce((acc, c) => {
-    Object.entries(c.byProvider).forEach(([provider, amount]) => {
-      acc[provider] = (acc[provider] || 0) + amount;
+    Object.entries(c.byProvider || {}).forEach(([provider, amount]) => {
+      acc[provider] = (acc[provider] || 0) + (typeof amount === 'number' ? amount : 0);
     });
     return acc;
   }, {} as Record<string, number>);
 
   // Aggregate by model
   const byModel = Object.values(costs).reduce((acc, c) => {
-    Object.entries(c.byModel).forEach(([model, amount]) => {
-      acc[model] = (acc[model] || 0) + amount;
+    Object.entries(c.byModel || {}).forEach(([model, amount]) => {
+      acc[model] = (acc[model] || 0) + (typeof amount === 'number' ? amount : 0);
     });
     return acc;
   }, {} as Record<string, number>);
 
   // Chart data
-  const dailyData = costs.alvi?.dailyCosts.map((d) => ({
-    date: d.date.slice(5), // MM-DD
-    Coste: d.total,
+  const dailyData = costs.alvi?.dailyCosts?.map((d) => ({
+    date: typeof d.date === 'string' ? d.date.slice(5) : '', // MM-DD
+    Coste: d.total || 0,
   })) || [];
 
   const providerChartData = Object.entries(byProvider).map(([name, value]) => ({
-    name: name.charAt(0).toUpperCase() + name.slice(1),
+    name: name === 'gcp-infra' ? 'GCP Infra' : name.charAt(0).toUpperCase() + name.slice(1),
     value,
-    color: name === 'anthropic' ? 'orange.6' : name === 'google' ? 'blue.6' : 'gray.6',
+    color: name === 'anthropic' ? 'orange.6' : name === 'google' ? 'blue.6' : name === 'gcp-infra' ? 'green.6' : 'gray.6',
   }));
 
   const modelChartData = Object.entries(byModel).map(([name, value]) => ({
@@ -111,14 +98,22 @@ export function CostsPage() {
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('es-ES', {
       style: 'currency',
-      currency: 'USD',
+      currency: 'EUR',
       minimumFractionDigits: 2,
     }).format(value);
   };
 
   const daysInMonth = 28; // Feb
-  const daysElapsed = 14;
-  const projectedTotal = (totalCost / daysElapsed) * daysInMonth;
+  const daysElapsed = new Date().getDate();
+  const projectedTotal = daysElapsed > 0 ? (totalCost / daysElapsed) * daysInMonth : 0;
+
+  if (isLoading) {
+    return (
+      <Center h={400}>
+        <Loader size="lg" />
+      </Center>
+    );
+  }
 
   return (
     <Box p="xl">
@@ -126,6 +121,11 @@ export function CostsPage() {
         <Box>
           <Group gap="sm">
             <Title order={2}>Control de Costes</Title>
+            {isLiveData && (
+              <Badge color="green" variant="light" leftSection={<IconRefresh size={12} />}>
+                Datos en vivo
+              </Badge>
+            )}
             {budgetUsage > 80 && (
               <Badge color="red" leftSection={<IconAlertTriangle size={12} />}>
                 {budgetUsage.toFixed(0)}% del presupuesto
@@ -133,8 +133,13 @@ export function CostsPage() {
             )}
           </Group>
           <Text c="dimmed" mt={4}>
-            Monitoriza el gasto en tokens de tus instancias
+            Monitoriza el gasto en tokens e infraestructura de tus instancias
           </Text>
+          {summary?.lastUpdated && (
+            <Text c="dimmed" size="xs" mt={2}>
+              Última actualización: {new Date(summary.lastUpdated).toLocaleString('es-ES')}
+            </Text>
+          )}
         </Box>
         <Group>
           <Select
@@ -158,6 +163,29 @@ export function CostsPage() {
         </Group>
       </Group>
 
+      {/* Data source indicator */}
+      {isLiveData ? (
+        <Alert color="green" mb="xl" icon={<IconRefresh />}>
+          <Group justify="space-between">
+            <Text size="sm">
+              <strong>✅ DATOS REALES</strong> — Conectado a Cloud Billing API + Firestore.
+              {summary?.lastUpdated && ` Última sync: ${new Date(summary.lastUpdated).toLocaleString('es-ES')}`}
+            </Text>
+            <Badge color="green" variant="filled">LIVE</Badge>
+          </Group>
+        </Alert>
+      ) : (
+        <Alert color="orange" mb="xl" icon={<IconAlertTriangle />}>
+          <Group justify="space-between">
+            <Text size="sm">
+              <strong>⚠️ DATOS DE EJEMPLO</strong> — No hay datos en Firestore o no estás autenticado correctamente.
+              {hasError && ` Error: ${instancesError?.message || costsError?.message}`}
+            </Text>
+            <Badge color="orange" variant="filled">MOCK</Badge>
+          </Group>
+        </Alert>
+      )}
+
       {/* Summary Cards */}
       <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} mb="xl">
         <CostCard
@@ -177,11 +205,11 @@ export function CostsPage() {
         />
         <CostCard
           title="Gasto diario medio"
-          value={formatCurrency(totalCost / daysElapsed)}
+          value={formatCurrency(daysElapsed > 0 ? totalCost / daysElapsed : 0)}
           subtitle={`${daysElapsed} días transcurridos`}
           icon={<IconReceipt size={20} />}
           color="violet"
-          trend={{ value: 12, label: 'vs semana anterior' }}
+          trend={summary ? { value: Math.round(((summary.totalApi / (summary.totalInfra || 1)) - 1) * 100), label: 'API vs Infra' } : undefined}
         />
         <Paper p="lg" radius="md" withBorder>
           <Text size="sm" c="dimmed" fw={500} mb="xs">Presupuesto mensual</Text>
@@ -189,7 +217,7 @@ export function CostsPage() {
             <NumberInput
               value={budget}
               onChange={(v) => setBudget(Number(v) || 100)}
-              prefix="$"
+              prefix="€"
               min={10}
               max={1000}
               step={10}
@@ -200,44 +228,83 @@ export function CostsPage() {
         </Paper>
       </SimpleGrid>
 
+      {/* Infra vs API breakdown */}
+      {summary && (
+        <SimpleGrid cols={{ base: 1, sm: 2 }} mb="xl">
+          <Paper p="lg" radius="md" withBorder>
+            <Group justify="space-between" mb="md">
+              <Text fw={600}>🖥️ Infraestructura GCP</Text>
+              <Badge color="green" variant="light">{formatCurrency(summary.totalInfra)}</Badge>
+            </Group>
+            <Text c="dimmed" size="sm">e2-medium · europe-west1 · €24.75/mes</Text>
+          </Paper>
+          <Paper p="lg" radius="md" withBorder>
+            <Group justify="space-between" mb="md">
+              <Text fw={600}>🤖 APIs (Anthropic, Google)</Text>
+              <Badge color="orange" variant="light">{formatCurrency(summary.totalApi)}</Badge>
+            </Group>
+            <Text c="dimmed" size="sm">Claude Opus 4.5 · Tokens: {Object.values(costs)[0]?.tokensByModel ? 
+              Object.values(Object.values(costs)[0].tokensByModel).reduce((sum: number, t: any) => sum + (t.input || 0) + (t.output || 0), 0).toLocaleString() : '0'}</Text>
+          </Paper>
+        </SimpleGrid>
+      )}
+
       {/* Charts Row */}
       <SimpleGrid cols={{ base: 1, lg: 2 }} mb="xl">
         <Paper p="lg" radius="md" withBorder>
           <Text fw={600} mb="md">Gasto diario</Text>
-          <AreaChart
-            h={250}
-            data={dailyData}
-            dataKey="date"
-            series={[{ name: 'Coste', color: 'blue.6' }]}
-            curveType="natural"
-            withDots={false}
-            gridAxis="xy"
-            valueFormatter={(value) => `$${value.toFixed(2)}`}
-          />
+          {dailyData.length > 0 ? (
+            <AreaChart
+              h={250}
+              data={dailyData}
+              dataKey="date"
+              series={[{ name: 'Coste', color: 'blue.6' }]}
+              curveType="natural"
+              withDots={false}
+              gridAxis="xy"
+              valueFormatter={(value) => `€${value.toFixed(2)}`}
+            />
+          ) : (
+            <Center h={250}>
+              <Text c="dimmed">Sin datos de gasto diario</Text>
+            </Center>
+          )}
         </Paper>
 
         <SimpleGrid cols={2}>
           <Paper p="lg" radius="md" withBorder>
             <Text fw={600} mb="md">Por proveedor</Text>
-            <DonutChart
-              h={200}
-              data={providerChartData}
-              withLabelsLine
-              withLabels
-              tooltipDataSource="segment"
-              valueFormatter={(value) => `$${value.toFixed(2)}`}
-            />
+            {providerChartData.length > 0 ? (
+              <DonutChart
+                h={200}
+                data={providerChartData}
+                withLabelsLine
+                withLabels
+                tooltipDataSource="segment"
+                valueFormatter={(value) => `€${value.toFixed(2)}`}
+              />
+            ) : (
+              <Center h={200}>
+                <Text c="dimmed">Sin datos</Text>
+              </Center>
+            )}
           </Paper>
           <Paper p="lg" radius="md" withBorder>
             <Text fw={600} mb="md">Por modelo</Text>
-            <DonutChart
-              h={200}
-              data={modelChartData}
-              withLabelsLine
-              withLabels
-              tooltipDataSource="segment"
-              valueFormatter={(value) => `$${value.toFixed(2)}`}
-            />
+            {modelChartData.length > 0 ? (
+              <DonutChart
+                h={200}
+                data={modelChartData}
+                withLabelsLine
+                withLabels
+                tooltipDataSource="segment"
+                valueFormatter={(value) => `€${value.toFixed(2)}`}
+              />
+            ) : (
+              <Center h={200}>
+                <Text c="dimmed">Sin datos</Text>
+              </Center>
+            )}
           </Paper>
         </SimpleGrid>
       </SimpleGrid>

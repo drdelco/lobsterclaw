@@ -1,13 +1,19 @@
 import { useState, useRef, useEffect } from 'react';
-import { Box, Group, Text, Paper, Stack, Badge, ScrollArea, ActionIcon, Tooltip, Menu } from '@mantine/core';
+import { Box, Group, Text, Paper, Stack, Badge, ScrollArea, ActionIcon, Menu, Button, Center, Alert, TextInput, Loader } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconDots, IconTrash, IconDownload, IconBroadcast } from '@tabler/icons-react';
+import { IconDots, IconTrash, IconDownload, IconBrandTelegram, IconSend } from '@tabler/icons-react';
 import { InstanceSelector } from '@/components/chat/InstanceSelector';
 import { ChatMessage } from '@/components/chat/ChatMessage';
-import { ChatInput } from '@/components/chat/ChatInput';
+import { useInstances } from '@/hooks/useFirestore';
+import { collection, query, orderBy, limit, onSnapshot, addDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import type { Instance, ChatMessage as ChatMessageType } from '@/types';
 
-// Mock data
+// Telegram bot link (fallback)
+const TELEGRAM_BOT = 'drdelcobot';
+const TELEGRAM_LINK = `https://t.me/${TELEGRAM_BOT}`;
+
+// Mock fallback
 const mockInstances: Instance[] = [
   {
     id: 'alvi',
@@ -25,120 +31,122 @@ const mockInstances: Instance[] = [
   },
 ];
 
-const mockMessages: Record<string, ChatMessageType[]> = {
-  alvi: [
-    {
-      id: '1',
-      instanceId: 'alvi',
-      role: 'user',
-      content: 'Hola Alvi, ¿cómo estás?',
-      source: 'telegram',
-      timestamp: new Date(Date.now() - 3600000),
-    },
-    {
-      id: '2',
-      instanceId: 'alvi',
-      role: 'assistant',
-      content: '¡Hola Diego! Estoy funcionando perfectamente. He revisado los emails esta mañana y todo está en orden. ¿En qué puedo ayudarte?',
-      source: 'telegram',
-      timestamp: new Date(Date.now() - 3500000),
-    },
-    {
-      id: '3',
-      instanceId: 'alvi',
-      role: 'user',
-      content: '¿Hay algo pendiente para hoy?',
-      source: 'telegram',
-      timestamp: new Date(Date.now() - 1800000),
-    },
-    {
-      id: '4',
-      instanceId: 'alvi',
-      role: 'assistant',
-      content: 'Revisando... Tienes:\n\n• 3 emails pendientes de clasificar\n• Reunión a las 16:00 (calendario)\n• El proyecto appAloosy empieza hoy 🚀\n\n¿Quieres que te prepare un resumen más detallado?',
-      source: 'telegram',
-      timestamp: new Date(Date.now() - 1700000),
-    },
-  ],
-};
-
 export function ChatPage() {
-  const [selectedInstance, setSelectedInstance] = useState<string | null>(mockInstances[0]?.id || null);
-  const [messages, setMessages] = useState<Record<string, ChatMessageType[]>>(mockMessages);
-  const [loading, setLoading] = useState(false);
+  const [selectedInstance, setSelectedInstance] = useState<string | null>('alvi');
+  const [messages, setMessages] = useState<ChatMessageType[]>([]);
+  const [inputValue, setInputValue] = useState('');
+  const [sending, setSending] = useState(false);
+  const [loadingMessages, setLoadingMessages] = useState(true);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
-  const instances = mockInstances;
-  const currentMessages = selectedInstance ? (messages[selectedInstance] || []) : [];
+  const { instances: firestoreInstances } = useInstances();
+  const instances = firestoreInstances.length > 0 ? firestoreInstances : mockInstances;
   const currentInstance = instances.find((i) => i.id === selectedInstance);
+
+  // Listen to messages from Firestore
+  useEffect(() => {
+    if (!selectedInstance) return;
+
+    setLoadingMessages(true);
+    const messagesRef = collection(db, 'chat', selectedInstance, 'messages');
+    const q = query(messagesRef, orderBy('timestamp', 'asc'), limit(100));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const msgs = snapshot.docs.map((doc) => {
+          const d = doc.data();
+          let timestamp = new Date();
+          if (d.timestamp instanceof Timestamp) {
+            timestamp = d.timestamp.toDate();
+          } else if (d.timestamp) {
+            timestamp = new Date(d.timestamp);
+          }
+          return {
+            id: doc.id,
+            instanceId: selectedInstance,
+            role: d.role || 'user',
+            content: d.content || '',
+            source: d.source || 'dashboard',
+            timestamp,
+          } as ChatMessageType;
+        });
+        setMessages(msgs);
+        setLoadingMessages(false);
+      },
+      (error) => {
+        console.error('Error loading messages:', error);
+        setLoadingMessages(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [selectedInstance]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
     if (scrollAreaRef.current) {
-      scrollAreaRef.current.scrollTo({ top: scrollAreaRef.current.scrollHeight, behavior: 'smooth' });
+      const viewport = scrollAreaRef.current.querySelector('[data-viewport]') || scrollAreaRef.current;
+      viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' });
     }
-  }, [currentMessages]);
+  }, [messages]);
 
-  const handleSendMessage = async (content: string) => {
-    if (!selectedInstance) return;
+  const handleSendMessage = async () => {
+    if (!selectedInstance || !inputValue.trim()) return;
 
-    // Add user message
-    const userMessage: ChatMessageType = {
-      id: `msg-${Date.now()}`,
-      instanceId: selectedInstance,
-      role: 'user',
-      content,
-      source: 'dashboard',
-      timestamp: new Date(),
-    };
+    const content = inputValue.trim();
+    setInputValue('');
+    setSending(true);
 
-    setMessages((prev) => ({
-      ...prev,
-      [selectedInstance]: [...(prev[selectedInstance] || []), userMessage],
-    }));
-
-    setLoading(true);
-
-    // Simulate API call
-    // TODO: Replace with actual sessions_send call
-    setTimeout(() => {
-      const assistantMessage: ChatMessageType = {
-        id: `msg-${Date.now() + 1}`,
-        instanceId: selectedInstance,
-        role: 'assistant',
-        content: `Recibido desde el Dashboard. Este es un mensaje de prueba.\n\nEn producción, esto conectará con la API real de OpenClaw usando sessions_send.`,
+    try {
+      // Add user message to Firestore
+      const messagesRef = collection(db, 'chat', selectedInstance, 'messages');
+      await addDoc(messagesRef, {
+        role: 'user',
+        content,
         source: 'dashboard',
-        timestamp: new Date(),
-      };
+        timestamp: serverTimestamp(),
+        processed: false,
+      });
 
-      setMessages((prev) => ({
-        ...prev,
-        [selectedInstance]: [...(prev[selectedInstance] || []), assistantMessage],
-      }));
+      notifications.show({
+        message: 'Mensaje enviado. Alvi responderá en breve.',
+        color: 'blue',
+      });
+    } catch (error: any) {
+      console.error('Error sending message:', error);
+      notifications.show({
+        title: 'Error',
+        message: error.message || 'No se pudo enviar el mensaje',
+        color: 'red',
+      });
+      setInputValue(content); // Restore message
+    }
 
-      setLoading(false);
-    }, 1500);
+    setSending(false);
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
   };
 
   const handleClearChat = () => {
-    if (!selectedInstance) return;
-    setMessages((prev) => ({
-      ...prev,
-      [selectedInstance]: [],
-    }));
     notifications.show({
-      message: 'Chat limpiado',
+      message: 'Para limpiar el historial, contacta con el administrador.',
       color: 'yellow',
     });
   };
 
   const handleExportChat = () => {
-    if (!selectedInstance || !currentMessages.length) return;
-    
-    const content = currentMessages
+    if (!messages.length) return;
+
+    const content = messages
       .map((m) => `[${m.timestamp.toISOString()}] ${m.role}: ${m.content}`)
       .join('\n\n');
-    
+
     const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -153,12 +161,8 @@ export function ChatPage() {
     });
   };
 
-  const handleBroadcast = () => {
-    notifications.show({
-      title: 'Broadcast',
-      message: 'Próximamente: enviar mensaje a todas las instancias',
-      color: 'blue',
-    });
+  const openTelegram = () => {
+    window.location.href = TELEGRAM_LINK;
   };
 
   return (
@@ -194,17 +198,20 @@ export function ChatPage() {
                       </Badge>
                     </Group>
                     <Text size="xs" c="dimmed">
-                      {currentInstance.model.split('/').pop()} • {currentInstance.location}
+                      {currentInstance.model?.split('/').pop() || 'unknown'} • Chat integrado
                     </Text>
                   </Box>
                 </Group>
 
                 <Group gap="xs">
-                  <Tooltip label="Broadcast a todas">
-                    <ActionIcon variant="subtle" onClick={handleBroadcast}>
-                      <IconBroadcast size={18} />
-                    </ActionIcon>
-                  </Tooltip>
+                  <Button
+                    variant="subtle"
+                    size="xs"
+                    leftSection={<IconBrandTelegram size={16} />}
+                    onClick={openTelegram}
+                  >
+                    Telegram
+                  </Button>
                   <Menu position="bottom-end">
                     <Menu.Target>
                       <ActionIcon variant="subtle">
@@ -215,7 +222,7 @@ export function ChatPage() {
                       <Menu.Item
                         leftSection={<IconDownload size={16} />}
                         onClick={handleExportChat}
-                        disabled={!currentMessages.length}
+                        disabled={!messages.length}
                       >
                         Exportar chat
                       </Menu.Item>
@@ -223,7 +230,7 @@ export function ChatPage() {
                         leftSection={<IconTrash size={16} />}
                         color="red"
                         onClick={handleClearChat}
-                        disabled={!currentMessages.length}
+                        disabled={!messages.length}
                       >
                         Limpiar chat
                       </Menu.Item>
@@ -233,37 +240,67 @@ export function ChatPage() {
               </Group>
             </Paper>
 
+            {/* Info banner */}
+            <Alert color="blue" radius={0} py="xs">
+              <Group gap="xs" justify="center">
+                <Text size="xs">
+                  💬 Chat integrado — Los mensajes se sincronizan con Alvi. Respuestas en ~1 min.
+                </Text>
+              </Group>
+            </Alert>
+
             {/* Messages */}
-            <ScrollArea
-              style={{ flex: 1 }}
-              p="md"
-              viewportRef={scrollAreaRef}
-            >
-              {currentMessages.length > 0 ? (
-                currentMessages.map((message) => (
-                  <ChatMessage key={message.id} message={message} />
-                ))
+            <ScrollArea style={{ flex: 1 }} p="md" viewportRef={scrollAreaRef}>
+              {loadingMessages ? (
+                <Center h="100%">
+                  <Loader size="lg" />
+                </Center>
+              ) : messages.length > 0 ? (
+                <Stack gap="md">
+                  {messages.map((message) => (
+                    <ChatMessage key={message.id} message={message} />
+                  ))}
+                </Stack>
               ) : (
                 <Stack align="center" justify="center" h="100%" gap="md">
                   <Text size="3rem">{currentInstance.emoji || '🤖'}</Text>
-                  <Text c="dimmed">
+                  <Text c="dimmed" ta="center">
                     Inicia una conversación con {currentInstance.name}
+                  </Text>
+                  <Text size="xs" c="dimmed" ta="center">
+                    Los mensajes se procesan en tiempo real
                   </Text>
                 </Stack>
               )}
             </ScrollArea>
 
             {/* Input */}
-            <ChatInput
-              onSend={handleSendMessage}
-              loading={loading}
-              disabled={currentInstance.status !== 'online'}
-              placeholder={
-                currentInstance.status !== 'online'
-                  ? 'Instancia offline...'
-                  : `Mensaje a ${currentInstance.name}...`
-              }
-            />
+            <Paper
+              p="md"
+              radius={0}
+              style={{ borderTop: '1px solid var(--mantine-color-dark-6)' }}
+            >
+              <Group gap="sm">
+                <TextInput
+                  placeholder={`Mensaje a ${currentInstance.name}...`}
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.currentTarget.value)}
+                  onKeyPress={handleKeyPress}
+                  disabled={sending || currentInstance.status !== 'online'}
+                  style={{ flex: 1 }}
+                  rightSection={sending ? <Loader size="xs" /> : null}
+                />
+                <ActionIcon
+                  size="lg"
+                  variant="filled"
+                  color="blue"
+                  onClick={handleSendMessage}
+                  disabled={!inputValue.trim() || sending}
+                >
+                  <IconSend size={18} />
+                </ActionIcon>
+              </Group>
+            </Paper>
           </>
         ) : (
           <Stack align="center" justify="center" h="100%" gap="md">

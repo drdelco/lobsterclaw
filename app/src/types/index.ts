@@ -4,6 +4,7 @@ export interface Instance {
   name: string;
   emoji?: string;
   location: 'gcloud' | 'local' | 'vps';
+  region?: string;
   host: string;
   port: number;
   gatewayToken: string;
@@ -13,11 +14,27 @@ export interface Instance {
     user: string;
     keyId: string;
   };
-  status: 'online' | 'offline' | 'error';
-  lastHeartbeat: Date;
+  status: 'online' | 'offline' | 'error' | 'unknown';
+  lastHeartbeat: Date | string;
   version: string;
   model: string;
-  createdAt: Date;
+  fallbacks?: string[];
+  pid?: string;
+  uptimeSeconds?: number;
+  createdAt: Date | string;
+  
+  // System resources
+  hostname?: string;
+  platform?: string;
+  cpus?: number;
+  memoryTotalGB?: number;
+  memoryUsedPct?: number;
+  diskUsedPct?: number;
+  loadAvg1m?: number;
+  nodeVersion?: string;
+  
+  // Sync
+  lastSync?: string;
 }
 
 // Cron Job
@@ -45,9 +62,12 @@ export type CronPayload =
 // LLM Provider
 export interface LLMProvider {
   id: string;
+  provider: string;
   name: string;
+  icon: string;
   models: LLMModel[];
   apiKey: string;
+  apiKeyMasked?: string;
   baseUrl?: string;
   isActive: boolean;
   testStatus: 'ok' | 'error' | 'unknown';
@@ -62,6 +82,13 @@ export interface LLMModel {
   outputCostPer1k: number;
   maxTokens: number;
   supportsThinking?: boolean;
+}
+
+export interface LLMConfig {
+  primaryModel: string;
+  fallbacks: string[];
+  providerCount: number;
+  lastSync?: string;
 }
 
 // Costs
@@ -98,6 +125,7 @@ export interface ConfigFile {
   path: string;
   content: string;
   lastModified: Date;
+  description?: string;
 }
 
 export type ConfigFileName = 'SOUL.md' | 'MEMORY.md' | 'USER.md' | 'AGENTS.md' | 'HEARTBEAT.md' | 'TOOLS.md' | 'IDENTITY.md';
