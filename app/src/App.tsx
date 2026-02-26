@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import { Box, Group, Center, Loader } from '@mantine/core';
 import { useDisclosure, useMediaQuery } from '@mantine/hooks';
 import { Sidebar, MobileHeader } from '@/components/layout/Sidebar';
@@ -7,10 +7,11 @@ import { CronJobsPage } from '@/pages/CronJobsPage';
 import { CostsPage } from '@/pages/CostsPage';
 import { LLMsPage } from '@/pages/LLMsPage';
 import { ConfigPage } from '@/pages/ConfigPage';
-import { TerminalPage } from '@/pages/TerminalPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { useAuthState } from '@/hooks/useAuth';
+
+const TerminalPage = lazy(() => import('@/pages/TerminalPage').then(m => ({ default: m.TerminalPage })));
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState('instances');
@@ -77,7 +78,9 @@ export default function App() {
           />
         )}
         <Box style={{ flex: 1, overflow: 'auto' }}>
-          {renderPage()}
+          <Suspense fallback={<Center h="100%"><Loader /></Center>}>
+            {renderPage()}
+          </Suspense>
         </Box>
       </Box>
     </Group>

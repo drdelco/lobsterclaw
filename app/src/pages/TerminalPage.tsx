@@ -1,14 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Box, Title, Text, Group, Badge, Button, ActionIcon, Paper, Stack, Tooltip, ScrollArea } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { IconTerminal2, IconPlugConnected, IconPlugConnectedX, IconRefresh, IconChevronRight, IconCommand } from '@tabler/icons-react';
-import { Terminal } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
-import { WebLinksAddon } from '@xterm/addon-web-links';
-import '@xterm/xterm/css/xterm.css';
+import { IconTerminal2, IconPlugConnected, IconPlugConnectedX, IconRefresh, IconChevronRight, IconCommand, IconSend } from '@tabler/icons-react';
 
 const SYNC_TOKEN = 'lobsterclaw-sync-2026';
-const WS_URL = `ws://35.241.159.137:8787/terminal/ws?token=${SYNC_TOKEN}`;
+const WS_URL = `wss://ssh.ngclinicas.com/terminal/ws?token=${SYNC_TOKEN}`;
 
 const QUICK_COMMANDS = [
   { emoji: '🔍', label: 'Estado del gateway', command: 'systemctl --user status openclaw-gateway.service' },
@@ -27,130 +23,116 @@ const QUICK_COMMANDS = [
 
 type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 
+// Strip ANSI escape codes for clean display
+function stripAnsi(str: string): string {
+  return str
+    .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')   // CSI sequences (including ? variants)
+    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')  // OSC sequences
+    .replace(/\x1b[()][0-9A-B]/g, '')           // Character set selection
+    .replace(/\x1b\[[\d;]*m/g, '')              // SGR (color) sequences
+    .replace(/\r/g, '');                         // Carriage returns
+}
+
 export function TerminalPage() {
-  const terminalRef = useRef<HTMLDivElement>(null);
-  const termRef = useRef<Terminal | null>(null);
-  const fitAddonRef = useRef<FitAddon | null>(null);
+  const outputRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
+  const [output, setOutput] = useState('');
+  const [input, setInput] = useState('');
+  const [history, setHistory] = useState<string[]>([]);
+  const [historyIdx, setHistoryIdx] = useState(-1);
   const [paletteOpened, { toggle: togglePalette }] = useDisclosure(true);
 
-  const connect = useCallback(() => {
-    if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) {
-      return;
-    }
-
-    setStatus('connecting');
-    const ws = new WebSocket(WS_URL);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      setStatus('connected');
-      // Send initial resize
-      if (fitAddonRef.current && termRef.current) {
-        const dims = fitAddonRef.current.proposeDimensions();
-        if (dims) {
-          ws.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }));
-        }
-      }
-    };
-
-    ws.onmessage = (event) => {
-      termRef.current?.write(event.data);
-    };
-
-    ws.onclose = () => {
-      setStatus('disconnected');
-    };
-
-    ws.onerror = () => {
-      setStatus('disconnected');
-    };
+  const scrollToBottom = useCallback(() => {
+    setTimeout(() => {
+      if (outputRef.current) outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    }, 20);
   }, []);
+
+  const connect = useCallback(() => {
+    if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) return;
+    setStatus('connecting');
+    setOutput(prev => prev + '⏳ Conectando...\n');
+
+    try {
+      const ws = new WebSocket(WS_URL);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        setStatus('connected');
+        setOutput(prev => prev + '✅ Conectado al servidor\n\n');
+        scrollToBottom();
+      };
+
+      ws.onmessage = (event) => {
+        const clean = stripAnsi(event.data);
+        setOutput(prev => {
+          const next = prev + clean;
+          return next.length > 80000 ? next.slice(-80000) : next;
+        });
+        scrollToBottom();
+      };
+
+      ws.onclose = () => {
+        setStatus('disconnected');
+        setOutput(prev => prev + '\n❌ Desconectado\n');
+      };
+
+      ws.onerror = () => {
+        setStatus('disconnected');
+        setOutput(prev => prev + '\n⚠️ Error de conexión\n');
+      };
+    } catch (err) {
+      setStatus('disconnected');
+      setOutput(prev => prev + '\n⚠️ No se pudo conectar: ' + String(err) + '\n');
+    }
+  }, [scrollToBottom]);
 
   const sendCommand = useCallback((command: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(command + '\n');
+      setHistory(prev => [command, ...prev].slice(0, 50));
+      setHistoryIdx(-1);
     }
   }, []);
 
-  useEffect(() => {
-    if (!terminalRef.current) return;
-
-    const term = new Terminal({
-      cursorBlink: true,
-      fontSize: 14,
-      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, Monaco, monospace",
-      theme: {
-        background: '#1a1b1e',
-        foreground: '#c9d1d9',
-        cursor: '#58a6ff',
-        selectionBackground: 'rgba(56, 139, 253, 0.3)',
-        black: '#0d1117',
-        red: '#ff7b72',
-        green: '#7ee787',
-        yellow: '#d29922',
-        blue: '#58a6ff',
-        magenta: '#bc8cff',
-        cyan: '#39c5cf',
-        white: '#c9d1d9',
-        brightBlack: '#484f58',
-        brightRed: '#ffa198',
-        brightGreen: '#56d364',
-        brightYellow: '#e3b341',
-        brightBlue: '#79c0ff',
-        brightMagenta: '#d2a8ff',
-        brightCyan: '#56d4dd',
-        brightWhite: '#f0f6fc',
-      },
-      allowProposedApi: true,
-    });
-
-    const fitAddon = new FitAddon();
-    const webLinksAddon = new WebLinksAddon();
-
-    term.loadAddon(fitAddon);
-    term.loadAddon(webLinksAddon);
-    term.open(terminalRef.current);
-
-    termRef.current = term;
-    fitAddonRef.current = fitAddon;
-
-    // Fit terminal
-    setTimeout(() => fitAddon.fit(), 0);
-
-    // Send typed input to WebSocket
-    term.onData((data) => {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(data);
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (input.trim()) {
+        sendCommand(input);
+        setInput('');
       }
-    });
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (history.length > 0) {
+        const newIdx = Math.min(historyIdx + 1, history.length - 1);
+        setHistoryIdx(newIdx);
+        setInput(history[newIdx]);
+      }
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (historyIdx > 0) {
+        const newIdx = historyIdx - 1;
+        setHistoryIdx(newIdx);
+        setInput(history[newIdx]);
+      } else {
+        setHistoryIdx(-1);
+        setInput('');
+      }
+    }
+  };
 
-    // Handle resize
-    const resizeObserver = new ResizeObserver(() => {
-      try {
-        fitAddon.fit();
-        const dims = fitAddon.proposeDimensions();
-        if (dims && wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }));
-        }
-      } catch {}
-    });
-
-    resizeObserver.observe(terminalRef.current);
-
-    // Connect automatically
+  useEffect(() => {
     connect();
-
     return () => {
-      resizeObserver.disconnect();
-      term.dispose();
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
       }
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [connect]);
 
   const statusColor = status === 'connected' ? 'green' : status === 'connecting' ? 'yellow' : 'red';
   const statusLabel = status === 'connected' ? 'Conectado' : status === 'connecting' ? 'Conectando...' : 'Desconectado';
@@ -166,23 +148,14 @@ export function TerminalPage() {
             color={statusColor}
             variant="dot"
             size="lg"
-            leftSection={
-              status === 'connected'
-                ? <IconPlugConnected size={14} />
-                : <IconPlugConnectedX size={14} />
-            }
+            leftSection={status === 'connected' ? <IconPlugConnected size={14} /> : <IconPlugConnectedX size={14} />}
           >
             {statusLabel}
           </Badge>
         </Group>
         <Group gap="xs">
           {status === 'disconnected' && (
-            <Button
-              size="xs"
-              variant="light"
-              leftSection={<IconRefresh size={14} />}
-              onClick={connect}
-            >
+            <Button size="xs" variant="light" leftSection={<IconRefresh size={14} />} onClick={connect}>
               Reconectar
             </Button>
           )}
@@ -194,7 +167,7 @@ export function TerminalPage() {
         </Group>
       </Group>
 
-      {/* Main area: terminal + command palette */}
+      {/* Main area */}
       <Group gap="sm" align="stretch" wrap="nowrap" style={{ flex: 1, minHeight: 0 }}>
         {/* Terminal */}
         <Paper
@@ -203,17 +176,66 @@ export function TerminalPage() {
             flex: 1,
             overflow: 'hidden',
             border: '1px solid var(--mantine-color-dark-4)',
-            backgroundColor: '#1a1b1e',
+            backgroundColor: '#0d1117',
             display: 'flex',
+            flexDirection: 'column',
           }}
         >
+          {/* Output */}
           <div
-            ref={terminalRef}
+            ref={outputRef}
+            onClick={() => inputRef.current?.focus()}
             style={{
               flex: 1,
-              padding: '4px',
+              overflow: 'auto',
+              padding: '12px',
+              fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, Monaco, monospace",
+              fontSize: 13,
+              lineHeight: 1.6,
+              color: '#c9d1d9',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
             }}
-          />
+          >
+            {output || '💻 Terminal listo. Pulsa Reconectar si no se conecta automáticamente.'}
+          </div>
+
+          {/* Input */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            borderTop: '1px solid #30363d',
+            padding: '8px 12px',
+            backgroundColor: '#161b22',
+            gap: 8,
+          }}>
+            <Text size="sm" c="green" ff="monospace" fw={700}>$</Text>
+            <input
+              ref={inputRef}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={status !== 'connected'}
+              placeholder={status === 'connected' ? 'Escribe un comando...' : 'Desconectado'}
+              style={{
+                flex: 1,
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                color: '#c9d1d9',
+                fontFamily: "'JetBrains Mono', 'Fira Code', Menlo, Monaco, monospace",
+                fontSize: 13,
+              }}
+            />
+            <ActionIcon
+              variant="subtle"
+              color="green"
+              disabled={status !== 'connected' || !input.trim()}
+              onClick={() => { sendCommand(input); setInput(''); }}
+            >
+              <IconSend size={16} />
+            </ActionIcon>
+          </div>
         </Paper>
 
         {/* Command Palette */}
@@ -222,12 +244,7 @@ export function TerminalPage() {
             radius="md"
             withBorder
             p="xs"
-            style={{
-              width: 240,
-              flexShrink: 0,
-              display: 'flex',
-              flexDirection: 'column',
-            }}
+            style={{ width: 240, flexShrink: 0, display: 'flex', flexDirection: 'column' }}
           >
             <Group gap="xs" mb="xs">
               <IconCommand size={16} />
@@ -236,14 +253,7 @@ export function TerminalPage() {
             <ScrollArea style={{ flex: 1 }}>
               <Stack gap={4}>
                 {QUICK_COMMANDS.map((cmd) => (
-                  <Tooltip
-                    key={cmd.label}
-                    label={cmd.command}
-                    position="left"
-                    multiline
-                    maw={300}
-                    withArrow
-                  >
+                  <Tooltip key={cmd.label} label={cmd.command} position="left" multiline maw={300} withArrow>
                     <Button
                       variant="subtle"
                       size="compact-sm"
