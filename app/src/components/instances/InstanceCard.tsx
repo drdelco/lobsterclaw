@@ -149,7 +149,10 @@ export function InstanceCard({ instance, isSelected, onSelect, onRestart, onUpda
               <Box>
                 <Group justify="space-between" mb={2}>
                   <Text size="xs" c="dimmed">Disco</Text>
-                  <Text size="xs" c="dimmed">{instance.diskUsedPct}%</Text>
+                  <Text size="xs" c="dimmed">
+                    {instance.diskUsedPct}%
+                    {instance.diskTotalGB ? ` de ${instance.diskTotalGB}GB` : ''}
+                  </Text>
                 </Group>
                 <Progress value={instance.diskUsedPct} color={diskColor(instance.diskUsedPct)} size="sm" radius="xl" />
               </Box>

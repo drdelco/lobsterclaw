@@ -29,6 +29,7 @@ export interface Instance {
   cpus?: number;
   memoryTotalGB?: number;
   memoryUsedPct?: number;
+  diskTotalGB?: number;
   diskUsedPct?: number;
   loadAvg1m?: number;
   nodeVersion?: string;

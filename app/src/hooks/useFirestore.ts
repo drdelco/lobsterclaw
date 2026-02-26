@@ -87,6 +87,7 @@ export function useInstances() {
             cpus: d.cpus || undefined,
             memoryTotalGB: d.memoryTotalGB || undefined,
             memoryUsedPct: d.memoryUsedPct || undefined,
+            diskTotalGB: d.diskTotalGB || undefined,
             diskUsedPct: d.diskUsedPct || undefined,
             loadAvg1m: d.loadAvg1m || undefined,
             nodeVersion: d.nodeVersion || undefined,
