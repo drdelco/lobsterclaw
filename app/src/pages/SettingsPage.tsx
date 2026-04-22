@@ -204,7 +204,7 @@ export function SettingsPage() {
 
           {passkeysError && (
             <Alert color="red" mb="md">
-              <Text size="sm">{passkeysError}</Text>
+              <Text size="sm">{passkeysError.message || String(passkeysError)}</Text>
             </Alert>
           )}
 
