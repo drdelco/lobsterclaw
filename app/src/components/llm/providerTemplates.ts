@@ -15,6 +15,16 @@ export const PROVIDER_TEMPLATES: Record<string, ProviderTemplate> = {
       { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', input: 3, output: 15 },
     ],
   },
+  deepseek: {
+    name: 'DeepSeek (V4)',
+    icon: '🔮',
+    keyPlaceholder: 'sk-...',
+    baseUrl: 'https://api.deepseek.com',
+    models: [
+      { id: 'deepseek-v4-flash', name: 'V4 Flash', input: 0.14, output: 0.28 },
+      { id: 'deepseek-v4-pro', name: 'V4 Pro', input: 1.74, output: 3.48 },
+    ],
+  },
   google: {
     name: 'Google (Gemini)',
     icon: '🔵',
